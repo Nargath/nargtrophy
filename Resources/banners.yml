@@ -1,0 +1,59 @@
+# NargTrophy banners
+#
+# Every banner is defined here. Adding a creature (vanilla or modded) is an edit to this file.
+# Values (radius, bonuses, costs) are server-synced and reload when the file is saved.
+# Adding or removing banners needs a restart, and every player needs the same banner list.
+#
+# All numbers are placeholders until the balance pass.
+
+defaults:
+  permanent:
+    radius: 30             # metres, measured flat (like a ward)
+    damageBonus: 0.15      # +15% damage dealt to the creature
+    damageReduction: 0.15  # -15% damage taken from the creature
+    station: piece_workbench
+    sourcePrefab: piece_banner01   # vanilla piece cloned for the stand-in look
+  portable:                # not used until phase 2
+    radius: 12
+    damageBonus: 0.30
+    damageReduction: 0.25
+    duration: 300          # seconds the planted banner lasts
+    cooldown: 900          # seconds, measured from planting
+    station: piece_workbench
+    stationLevel: 1
+
+banners:
+  - id: Greydwarf
+    creature: Greydwarf
+    trophy: TrophyGreydwarf
+    tint: "#4a6b3a"
+    permanent:
+      trophies: 4
+      extra:
+        - { item: Wood, amount: 10 }
+    portable:
+      trophies: 5
+      extra:
+        - { item: Resin, amount: 10 }
+
+  - id: Neck
+    creature: Neck
+    trophy: TrophyNeck
+    tint: "#5e7f8c"
+    permanent:
+      trophies: 8
+      extra:
+        - { item: Wood, amount: 10 }
+    portable:
+      trophies: 10
+
+  - id: Boar
+    creature: Boar
+    trophy: TrophyBoar
+    tint: "#8a5a3c"
+    permanent:
+      trophies: 8
+      extra:
+        - { item: Wood, amount: 10 }
+    portable:
+      trophies: 10

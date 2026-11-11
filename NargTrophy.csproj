@@ -1,0 +1,105 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>NargTrophy</AssemblyName>
+    <RootNamespace>NargTrophy</RootNamespace>
+    <Version>0.1.0</Version>
+    <Description>Craft creature banners from trophies. A placed banner boosts players against that one creature.</Description>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <!-- Update these paths to match YOUR system. Override on the command line with -p:ProfileDir=... -->
+  <PropertyGroup>
+    <ValheimDir>D:\Games\Steam\steamapps\common\Valheim</ValheimDir>
+    <ProfileDir Condition="'$(ProfileDir)' == ''">D:\Games\Modding\Mod Managers\Gale\Data\valheim\profiles\NargTrophy</ProfileDir>
+    <BepInExDir>$(ProfileDir)\BepInEx</BepInExDir>
+    <DeployToProfile Condition="'$(DeployToProfile)' == ''">true</DeployToProfile>
+  </PropertyGroup>
+
+  <!-- BepInEx core -->
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExDir)\core\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExDir)\core\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Jötunn and the shared YamlDotNet package (both installed in the profile, never shipped with this mod) -->
+  <ItemGroup>
+    <Reference Include="Jotunn">
+      <HintPath>$(BepInExDir)\plugins\ValheimModding-Jotunn\Jotunn.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="YamlDotNet">
+      <HintPath>$(BepInExDir)\plugins\ValheimModding-YamlDotNet\YamlDotNet.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Valheim game assemblies (assembly_valheim is publicized so private members are reachable) -->
+  <ItemGroup>
+    <Reference Include="assembly_valheim" Publicize="true">
+      <HintPath>$(ValheimDir)\valheim_Data\Managed\assembly_valheim.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="assembly_utils">
+      <HintPath>$(ValheimDir)\valheim_Data\Managed\assembly_utils.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="assembly_guiutils">
+      <HintPath>$(ValheimDir)\valheim_Data\Managed\assembly_guiutils.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Splatform">
+      <HintPath>$(ValheimDir)\valheim_Data\Managed\Splatform.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Unity assemblies -->
+  <ItemGroup>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ValheimDir)\valheim_Data\Managed\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ValheimDir)\valheim_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(ValheimDir)\valheim_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule">
+      <HintPath>$(ValheimDir)\valheim_Data\Managed\UnityEngine.AssetBundleModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ClothModule">
+      <HintPath>$(ValheimDir)\valheim_Data\Managed\UnityEngine.ClothModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.2" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- The default banners.yml, written to BepInEx/config/NargTrophy/ on first run -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\banners.yml" LogicalName="NargTrophy.banners.yml" />
+  </ItemGroup>
+
+  <!-- Copy the built plugin into the NargTrophy Gale test profile -->
+  <Target Name="DeployToProfile" AfterTargets="Build" Condition="'$(DeployToProfile)' == 'true'">
+    <MakeDir Directories="$(BepInExDir)\plugins\NargTrophy" />
+    <Copy SourceFiles="$(TargetPath);$(TargetDir)$(TargetName).pdb" DestinationFolder="$(BepInExDir)\plugins\NargTrophy" />
+  </Target>
+
+</Project>
