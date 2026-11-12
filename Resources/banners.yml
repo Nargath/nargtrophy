@@ -13,7 +13,7 @@ defaults:
     damageReduction: 0.15  # -15% damage taken from the creature
     station: piece_workbench
     sourcePrefab: piece_banner01   # vanilla piece cloned for the stand-in look
-  portable:                # not used until phase 2
+  portable:                # the reusable item that plants a banner for a while
     radius: 12
     damageBonus: 0.30
     damageReduction: 0.25
@@ -21,6 +21,7 @@ defaults:
     cooldown: 900          # seconds, measured from planting
     station: piece_workbench
     stationLevel: 1
+    sourcePrefab: piece_banner01   # look of the planted banner (shown smaller)
 
 banners:
   - id: Greydwarf

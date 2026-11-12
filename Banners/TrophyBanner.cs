@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
 using NargTrophy.Config;
@@ -8,16 +9,26 @@ namespace NargTrophy.Banners;
 /// <summary>
 /// On every banner prefab. Placed banners add themselves to <see cref="Active"/>, the same pattern vanilla
 /// wards use for their global list. The aura reads that list; nothing here runs per frame.
+///
+/// Planted portable banners also carry their expiry (server time ticks) and planter in the ZDO. Whoever owns
+/// the ZDO removes the banner once it has expired, so it disappears for everyone, including after relogs and
+/// zone reloads (checked on load too). Other clients stop counting it as soon as it expires.
 /// </summary>
 public class TrophyBanner : MonoBehaviour, Hoverable
 {
     public static readonly List<TrophyBanner> Active = new();
+
+    internal const string ZdoExpire = "nt_expire";
+    internal const string ZdoOwner = "nt_owner";
+    internal const string ZdoOwnerName = "nt_owner_name";
+    private const float ExpiryCheckSeconds = 2f;
 
     // Set on the prefab; Unity copies serialized fields to each placed instance.
     public string m_bannerId = "";
     public int m_kind;
 
     private Piece? _piece;
+    private ZNetView? _nview;
     private bool _listed;
 
     internal BannerKind Kind => (BannerKind)m_kind;
@@ -27,12 +38,20 @@ public class TrophyBanner : MonoBehaviour, Hoverable
         _piece = GetComponent<Piece>();
 
         // The build ghost and other non-networked copies have no ZDO; they must not give an aura.
-        var nview = GetComponent<ZNetView>();
-        if (nview == null || nview.GetZDO() == null) return;
+        _nview = GetComponent<ZNetView>();
+        if (_nview == null || _nview.GetZDO() == null) return;
 
         Active.Add(this);
         _listed = true;
         BannerAura.MarkDirty();
+
+        if (Kind == BannerKind.Portable)
+        {
+            ApplyProtection();
+            // Expired while nobody was around: removed as soon as it loads. Later checks run every few seconds.
+            CheckExpiry();
+            InvokeRepeating(nameof(CheckExpiry), ExpiryCheckSeconds, ExpiryCheckSeconds);
+        }
     }
 
     private void OnDestroy()
@@ -48,9 +67,63 @@ public class TrophyBanner : MonoBehaviour, Hoverable
     {
         values = null!;
         if (!BannerRegistry.TryGet(m_bannerId, out def) || !def.IsActive) return false;
+        if (Kind == BannerKind.Portable && IsExpired()) return false;
         values = def.Get(Kind);
         return true;
     }
+
+    // ---- Portable timer ----
+
+    /// <summary>Planter's player ID, or 0 for permanent banners.</summary>
+    internal long OwnerId => _nview != null && _nview.GetZDO() is { } zdo ? zdo.GetLong(ZdoOwner) : 0L;
+
+    /// <summary>Seconds until a portable banner expires. Null if not set (yet).</summary>
+    internal float? SecondsLeft()
+    {
+        if (_nview == null || _nview.GetZDO() is not { } zdo) return null;
+        long expire = zdo.GetLong(ZdoExpire);
+        if (expire == 0L || !BannerCooldowns.TryGetNow(out long now)) return null;
+        return (float)TimeSpan.FromTicks(expire - now).TotalSeconds;
+    }
+
+    internal bool IsExpired() => SecondsLeft() is <= 0f;
+
+    /// <summary>Called by the planter right after spawning, before anyone else can see the banner.</summary>
+    internal void Setup(Player planter, float duration)
+    {
+        if (_nview == null || _nview.GetZDO() is not { } zdo || !BannerCooldowns.TryGetNow(out long now)) return;
+        zdo.Set(ZdoExpire, now + TimeSpan.FromSeconds(duration).Ticks);
+        zdo.Set(ZdoOwner, planter.GetPlayerID());
+        zdo.Set(ZdoOwnerName, planter.GetPlayerName());
+    }
+
+    private void CheckExpiry()
+    {
+        if (_nview == null || !_nview.IsValid()) return;
+        ApplyProtection();
+        if (!_nview.IsOwner()) return;
+
+        ZDO zdo = _nview.GetZDO();
+        if (zdo.GetLong(ZdoExpire) == 0L)
+        {
+            // Never set up (planter disconnected mid-plant, or spawned by a command): give it one normal duration.
+            if (BannerCooldowns.TryGetNow(out long now) && BannerRegistry.TryGet(m_bannerId, out BannerDefinition def))
+                zdo.Set(ZdoExpire, now + TimeSpan.FromSeconds(def.Portable.Duration).Ticks);
+            return;
+        }
+        if (!IsExpired()) return;
+
+        if (ZNetScene.instance != null) ZNetScene.instance.Destroy(gameObject);
+        else Destroy(gameObject);
+    }
+
+    /// <summary>The protection setting is server-synced and may change while the banner stands.</summary>
+    private void ApplyProtection()
+    {
+        if (_piece != null) _piece.m_canBeRemoved = !ModConfig.PortableProtected.Value;
+    }
+
+    // ---- Hover ----
 
     public string GetHoverName() => _piece != null ? _piece.m_name : m_bannerId;
 
@@ -74,6 +147,17 @@ public class TrophyBanner : MonoBehaviour, Hoverable
         text.Append($"\n<color=orange>+{Percent(values.DamageBonus)}%</color> $nt_hover_damage_dealt");
         text.Append($"\n<color=orange>-{Percent(values.DamageReduction)}%</color> $nt_hover_damage_taken");
         text.Append($"\n$nt_hover_radius: <color=orange>{values.Radius:0.#} m</color>");
+
+        if (Kind == BannerKind.Portable)
+        {
+            float? left = SecondsLeft();
+            if (left is <= 0f) text.Append("\n$nt_hover_expired");
+            else if (left is float seconds) text.Append($"\n$nt_hover_time_left: <color=orange>{BannerCooldowns.Format(seconds)}</color>");
+
+            string owner = _nview != null && _nview.GetZDO() is { } zdo ? zdo.GetString(ZdoOwnerName) : "";
+            // Player names are user text: escape the rich-text brackets.
+            if (!string.IsNullOrEmpty(owner)) text.Append($"\n$nt_hover_planted_by: {owner.Replace("<", "‹").Replace(">", "›")}");
+        }
         return Localization.instance.Localize(text.ToString());
     }
 
