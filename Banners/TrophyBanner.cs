@@ -21,11 +21,15 @@ public class TrophyBanner : MonoBehaviour, Hoverable
     internal const string ZdoExpire = "nt_expire";
     internal const string ZdoOwner = "nt_owner";
     internal const string ZdoOwnerName = "nt_owner_name";
-    private const float ExpiryCheckSeconds = 2f;
+    private const float ExpiryCheckSeconds = 1f;
+    /// <summary>Seconds after expiry before the owner removes the standard: time for the poof and the sink.</summary>
+    internal const float RemoveDelay = 3f;
 
     // Set on the prefab; Unity copies serialized fields to each placed instance.
     public string m_bannerId = "";
     public int m_kind;
+    /// <summary>Child copy of the ward's area circle (inactive on the prefab). Unity remaps it per instance.</summary>
+    public CircleProjector? m_areaMarker;
 
     private Piece? _piece;
     private ZNetView? _nview;
@@ -39,7 +43,17 @@ public class TrophyBanner : MonoBehaviour, Hoverable
 
         // The build ghost and other non-networked copies have no ZDO; they must not give an aura.
         _nview = GetComponent<ZNetView>();
-        if (_nview == null || _nview.GetZDO() == null) return;
+        if (_nview == null || _nview.GetZDO() == null)
+        {
+            // The hammer's placement ghost: show the area it will cover while placing.
+            if (Kind == BannerKind.Permanent && ModConfig.ShowRadius.Value && m_areaMarker != null &&
+                BannerRegistry.TryGet(m_bannerId, out BannerDefinition def))
+            {
+                m_areaMarker.m_radius = def.Permanent.Radius;
+                m_areaMarker.gameObject.SetActive(true);
+            }
+            return;
+        }
 
         Active.Add(this);
         _listed = true;
@@ -111,7 +125,9 @@ public class TrophyBanner : MonoBehaviour, Hoverable
                 zdo.Set(ZdoExpire, now + TimeSpan.FromSeconds(def.Portable.Duration).Ticks);
             return;
         }
-        if (!IsExpired()) return;
+        // The bonus ends at expiry (TryGetValues), but the standard stays a few seconds longer so every client
+        // sees the poof and the sink into the ground (StandardExpiry) before it's removed.
+        if (!(SecondsLeft() is float left && left < -RemoveDelay)) return;
 
         if (ZNetScene.instance != null) ZNetScene.instance.Destroy(gameObject);
         else Destroy(gameObject);
@@ -144,6 +160,7 @@ public class TrophyBanner : MonoBehaviour, Hoverable
         }
 
         BannerValues values = def.Get(Kind);
+        ShowAreaMarker(values.Radius);
         text.Append($"\n<color=orange>+{Percent(values.DamageBonus)}%</color> $nt_hover_damage_dealt");
         text.Append($"\n<color=orange>-{Percent(values.DamageReduction)}%</color> $nt_hover_damage_taken");
         text.Append($"\n$nt_hover_radius: <color=orange>{values.Radius:0.#} m</color>");
@@ -162,6 +179,21 @@ public class TrophyBanner : MonoBehaviour, Hoverable
     }
 
     public float GetHoverOffset() => 0f;
+
+    /// <summary>Same pattern as the ward: hovering keeps the circle on; it hides half a second after.</summary>
+    private void ShowAreaMarker(float radius)
+    {
+        if (m_areaMarker == null || !ModConfig.ShowRadius.Value) return;
+        m_areaMarker.m_radius = radius;
+        m_areaMarker.gameObject.SetActive(true);
+        CancelInvoke(nameof(HideAreaMarker));
+        Invoke(nameof(HideAreaMarker), 0.5f);
+    }
+
+    private void HideAreaMarker()
+    {
+        if (m_areaMarker != null) m_areaMarker.gameObject.SetActive(false);
+    }
 
     internal static string Percent(float value) => Mathf.RoundToInt(value * 100f).ToString();
 }

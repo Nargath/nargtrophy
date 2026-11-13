@@ -35,6 +35,13 @@ internal sealed class BannerValues
     public int Trophies;
     public List<ExtraCost> Extra = new();
     public string SourcePrefab = "";
+
+    // Trophy model on the crossbar (startup only, like SourcePrefab). Size is the longest side in metres,
+    // before the war standard's 0.7 scale; offset and rotation adjust the automatic placement.
+    public bool MountEnabled = true;
+    public float MountSize;
+    public Vector3 MountOffset;
+    public Vector3 MountRotation;
 }
 
 /// <summary>
@@ -48,6 +55,10 @@ internal sealed class BannerDefinition
     public List<string> AlsoMatches = new();
     public string Trophy = "";
     public Color? Tint;
+
+    /// <summary>Optional labels from the file. Biome picks extra costs and a fallback tint; rarity picks trophy counts.</summary>
+    public string Biome = "";
+    public string Rarity = "";
 
     /// <summary>From the file in force (local, or the server's when connected). Synced.</summary>
     public bool Enabled = true;

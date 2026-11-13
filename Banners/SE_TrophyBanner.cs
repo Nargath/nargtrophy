@@ -29,7 +29,7 @@ public class SE_TrophyBanner : StatusEffect, IBannerEffect
 }
 
 /// <summary>
-/// HUD feedback for a portable banner's cooldown. Shows the vanilla cooldown overlay and timer; the tooltip
+/// HUD feedback for a portable banner's cooldown. Shows the timer (no vanilla cooldown X); the tooltip
 /// in Active Effects says when it can be planted again.
 /// </summary>
 public class SE_BannerCooldown : StatusEffect, IBannerEffect

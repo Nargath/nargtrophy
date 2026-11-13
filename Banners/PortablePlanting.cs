@@ -62,7 +62,9 @@ internal static class PortablePlanting
         GameObject? prefab = BannerPieces.PlantedPrefab(def);
         if (prefab == null || ZNetScene.instance == null) return;
 
-        Quaternion rotation = Quaternion.Euler(0f, player.transform.rotation.eulerAngles.y, 0f);
+        // Turned so the standard's front (cloth face and trophy) faces the planter: front yaw = view yaw + 180.
+        float viewYaw = player.transform.rotation.eulerAngles.y;
+        Quaternion rotation = Quaternion.Euler(0f, viewYaw + 180f - BannerPieces.FrontYaw(def), 0f);
         GameObject planted = Object.Instantiate(prefab, position, rotation);
         if (planted.TryGetComponent(out TrophyBanner banner)) banner.Setup(player, def.Portable.Duration);
         if (prefab.TryGetComponent(out Piece piece))

@@ -15,18 +15,26 @@ namespace NargTrophy.Banners;
 /// </summary>
 internal static class BannerPieces
 {
-    // Phase 1 uses a vanilla hammer tab ("Furniture" in code, shown as "Decor" in game).
-    // A dedicated "Banners" tab is Proposed for phase 3.
-    private const string Category = "Furniture";
+    // Own hammer tab (phase 3), so the banners don't flood Decor. Jötunn creates it from the name.
+    // Named after the pieces in it; plain "Banners" would suggest vanilla's decor banners live there too.
+    public const string Category = "Trophy banners";
 
     // Proposed stand-in (docs/05): the portable version is the same build, smaller.
     private const float PlantedScale = 0.7f;
 
     private static readonly List<(Piece piece, BannerDefinition def)> Built = new();
     private static readonly List<(CustomRecipe recipe, BannerDefinition def)> BuiltRecipes = new();
-    private static readonly Dictionary<(Material, Color), Material> TintedMaterials = new();
     private static readonly Dictionary<string, BannerDefinition> ByItemName = new();
     private static readonly Dictionary<string, GameObject> PlantedPrefabs = new();
+    private static readonly Dictionary<string, float> PlantedFrontYaw = new();
+
+    /// <summary>Yaw of the war standard's front (the trophy side) in its own space. See BannerVisuals.FrontOf.</summary>
+    public static float FrontYaw(BannerDefinition def) => PlantedFrontYaw.TryGetValue(def.Id, out float yaw) ? yaw : 90f;
+    private static readonly Dictionary<string, (Sprite? banner, Sprite? standard)> Icons = new();
+
+    /// <summary>Trophy banner icon (cloth on a crossbar) and war standard icon (on a pole). See BannerIcons.</summary>
+    public static Sprite? BannerIcon(BannerDefinition def) => Icons.TryGetValue(def.Id, out var icons) ? icons.banner : null;
+    public static Sprite? StandardIcon(BannerDefinition def) => Icons.TryGetValue(def.Id, out var icons) ? icons.standard : null;
 
     public static string PermanentPrefabName(BannerDefinition def) => $"piece_nt_banner_{def.Id.ToLowerInvariant()}";
     public static string PlantedPrefabName(BannerDefinition def) => $"nt_banner_planted_{def.Id.ToLowerInvariant()}";
@@ -73,14 +81,18 @@ internal static class BannerPieces
                 continue;
             }
             if (!TryResolve(def, out ItemDrop trophy, out Character creature)) continue;
+            WarnUnknownCosts(def);
 
             def.CreatureName = string.IsNullOrEmpty(creature.m_name) ? def.Creature : creature.m_name;
-            Sprite? icon = trophy.m_itemData.m_shared.m_icons is { Length: > 0 } icons ? icons[0] : null;
+            Sprite? trophyIcon = trophy.m_itemData.m_shared.m_icons is { Length: > 0 } icons ? icons[0] : null;
+            Sprite? bannerIcon = BannerIcons.Banner(trophyIcon, def.Tint);
+            Sprite? standardIcon = BannerIcons.Standard(trophyIcon, def.Tint);
+            Icons[def.Id] = (bannerIcon, standardIcon);
 
-            if (!BuildPermanent(def, icon)) continue;
-            AddAuraEffect(def, icon);
+            if (!BuildPermanent(def, trophy, bannerIcon)) continue;
+            AddAuraEffect(def, bannerIcon);
             // A banner whose portable version fails still works as a permanent piece.
-            if (BuildPlanted(def, icon) && BuildPortableItem(def, trophy, icon)) AddCooldownEffect(def, icon);
+            if (BuildPlanted(def, trophy, creature, standardIcon) && BuildPortableItem(def, trophy, standardIcon)) AddCooldownEffect(def, standardIcon);
             def.Registered = true;
             built++;
         }
@@ -115,7 +127,21 @@ internal static class BannerPieces
         return true;
     }
 
-    private static bool BuildPermanent(BannerDefinition def, Sprite? icon)
+    /// <summary>Unknown extra cost items are dropped from the cost when it's applied; say so once, at startup.</summary>
+    private static void WarnUnknownCosts(BannerDefinition def)
+    {
+        foreach ((string kind, BannerValues values) in new[] { ("permanent", def.Permanent), ("portable", def.Portable) })
+        {
+            foreach (ExtraCost extra in values.Extra)
+            {
+                GameObject? item = PrefabManager.Instance.GetPrefab(extra.Item);
+                if (item == null || item.GetComponent<ItemDrop>() == null)
+                    Plugin.Log.LogWarning($"Banner '{def.Id}': {kind} cost item '{extra.Item}' not found. It will be left out of the cost.");
+            }
+        }
+    }
+
+    private static bool BuildPermanent(BannerDefinition def, ItemDrop trophy, Sprite? icon)
     {
         BannerValues values = def.Permanent;
         string name = PermanentPrefabName(def);
@@ -137,7 +163,9 @@ internal static class BannerPieces
         // (Vanilla's m_noSupportWear means "wears when unsupported", despite the name.)
         if (prefab.TryGetComponent(out WearNTear wear)) wear.m_noSupportWear = false;
 
-        if (def.Tint is Color tint) ApplyTint(prefab, tint);
+        if (def.Tint is Color tint) BannerVisuals.ApplyTint(prefab, tint);
+        BannerVisuals.MountTrophy(prefab, trophy, values, def.Id);
+        banner.m_areaMarker = BannerVisuals.AddAreaMarker(prefab);
 
         var config = new PieceConfig
         {
@@ -158,7 +186,7 @@ internal static class BannerPieces
     /// The banner a portable item plants: a networked prefab, not in any build table. Same stand-in as the
     /// permanent piece, smaller. Not a target for monsters, walk-through, and protected by config (see patches).
     /// </summary>
-    private static bool BuildPlanted(BannerDefinition def, Sprite? icon)
+    private static bool BuildPlanted(BannerDefinition def, ItemDrop trophy, Character creature, Sprite? icon)
     {
         BannerValues values = def.Portable;
         GameObject? source = PrefabManager.Instance.GetPrefab(values.SourcePrefab);
@@ -197,11 +225,15 @@ internal static class BannerPieces
                 if (!collider.isTrigger) collider.gameObject.layer = nonSolid;
         }
 
-        if (def.Tint is Color tint) ApplyTint(prefab, tint);
-        MakeFreeStanding(prefab, nonSolid);
+        if (def.Tint is Color tint) BannerVisuals.ApplyTint(prefab, tint);
+        BannerVisuals.MakeFreeStanding(prefab, nonSolid);
+        BannerVisuals.MountTrophy(prefab, trophy, values, def.Id);
+        banner.m_areaMarker = BannerVisuals.AddAreaMarker(prefab);
+        prefab.AddComponent<StandardExpiry>().m_poof = BannerVisuals.MakePoof(creature);
 
         PrefabManager.Instance.AddPrefab(prefab);
         PlantedPrefabs[def.Id] = prefab;
+        PlantedFrontYaw[def.Id] = BannerVisuals.FrontYaw(BannerVisuals.FrontOf(prefab));
         return true;
     }
 
@@ -262,8 +294,9 @@ internal static class BannerPieces
     }
 
     /// <summary>
-    /// HUD only. A one-word label in the HUD row next to the trophy icon, the vanilla cooldown overlay (as on the
-    /// Forsaken power) and the timer. The Active Effects list gets a full name. The time left is set when it's
+    /// HUD only. A one-word label in the HUD row next to the trophy icon, and the timer. No vanilla cooldown
+    /// overlay (m_cooldownIcon): it draws an X, which next to "Replant" reads as "can't" or "cancelled" (agreed
+    /// 2026-11-13). The Active Effects list gets a full name. The time left is set when it's
     /// applied (see BannerCooldowns).
     /// </summary>
     private static void AddCooldownEffect(BannerDefinition def, Sprite? icon)
@@ -272,7 +305,6 @@ internal static class BannerPieces
         effect.name = CooldownEffectName(def);
         effect.m_name = "$nt_hud_replant";
         effect.m_longName = $"$nt_hud_replant: {def.CreatureName} $nt_portable"; // Active Effects (Patches/HudPatches)
-        effect.m_cooldownIcon = true;
         effect.m_icon = icon;
         effect.m_ttl = 0f;
         ItemManager.Instance.AddStatusEffect(new CustomStatusEffect(effect, false));
@@ -336,102 +368,5 @@ internal static class BannerPieces
             });
         }
         return requirements.ToArray();
-    }
-
-    private const float GroundClearance = 0.25f; // gap under the cloth, before the 0.7 scale
-    private const float PoleThickness = 0.09f;
-
-    /// <summary>
-    /// Wall banners have their origin at the crossbar with the cloth hanging below, so planted at the feet the
-    /// cloth ends up underground. Lifts every child so the lowest mesh sits just above the ground, then adds a
-    /// wooden pole from the ground to the top, just behind the cloth. Measured from the meshes, so it works for
-    /// any sourcePrefab. Stand-in visual only.
-    /// </summary>
-    private static void MakeFreeStanding(GameObject prefab, int poleLayer)
-    {
-        Transform root = prefab.transform;
-        if (!TryGetMeshBounds(root, out Bounds bounds, out Material? wood)) return;
-
-        float lift = GroundClearance - bounds.min.y;
-        foreach (Transform child in root) child.localPosition += Vector3.up * lift;
-        float top = bounds.max.y + lift;
-
-        GameObject pole = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        pole.name = "nt_pole";
-        pole.transform.SetParent(root, false);
-        // Unity's cylinder is 2 units tall and 1 wide, centred on its origin.
-        pole.transform.localPosition = new Vector3(bounds.center.x, top / 2f, bounds.min.z - PoleThickness / 2f);
-        pole.transform.localScale = new Vector3(PoleThickness, top / 2f + 0.05f, PoleThickness);
-        if (wood != null) pole.GetComponent<MeshRenderer>().sharedMaterial = wood;
-        // The pole's collider makes the banner easy to hover; non-solid so nobody gets stuck on it.
-        if (poleLayer >= 0) pole.layer = poleLayer;
-    }
-
-    /// <summary>Combined bounds of every mesh under <paramref name="root"/>, in its local space, plus a non-cloth material (the wood).</summary>
-    private static bool TryGetMeshBounds(Transform root, out Bounds bounds, out Material? wood)
-    {
-        Bounds result = default;
-        wood = null;
-        bool any = false;
-
-        void Add(Transform meshTransform, Mesh? mesh)
-        {
-            if (mesh == null) return;
-            Bounds local = mesh.bounds;
-            for (int i = 0; i < 8; i++)
-            {
-                var corner = new Vector3(
-                    (i & 1) == 0 ? local.min.x : local.max.x,
-                    (i & 2) == 0 ? local.min.y : local.max.y,
-                    (i & 4) == 0 ? local.min.z : local.max.z);
-                Vector3 point = root.InverseTransformPoint(meshTransform.TransformPoint(corner));
-                if (any) result.Encapsulate(point);
-                else result = new Bounds(point, Vector3.zero);
-                any = true;
-            }
-        }
-
-        foreach (MeshFilter filter in root.GetComponentsInChildren<MeshFilter>(true))
-        {
-            Add(filter.transform, filter.sharedMesh);
-            if (wood == null && filter.TryGetComponent(out MeshRenderer renderer) && renderer.GetComponent<Cloth>() == null)
-                wood = renderer.sharedMaterial;
-        }
-        foreach (SkinnedMeshRenderer skinned in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-            Add(skinned.transform, skinned.sharedMesh);
-
-        bounds = result;
-        return any;
-    }
-
-    /// <summary>
-    /// Tints the cloth. Renderers with a Cloth component (or "cloth"/"banner"/"flag" in the name) count as cloth;
-    /// if none match, everything is tinted. Visual only; logic never depends on it.
-    /// </summary>
-    private static void ApplyTint(GameObject prefab, Color tint)
-    {
-        Renderer[] renderers = prefab.GetComponentsInChildren<Renderer>(true);
-        var cloth = new List<Renderer>();
-        foreach (Renderer renderer in renderers)
-        {
-            string lower = renderer.gameObject.name.ToLowerInvariant();
-            if (renderer.GetComponent<Cloth>() != null || lower.Contains("cloth") || lower.Contains("banner") || lower.Contains("flag"))
-                cloth.Add(renderer);
-        }
-        foreach (Renderer renderer in cloth.Count > 0 ? cloth : new List<Renderer>(renderers))
-        {
-            Material[] materials = renderer.sharedMaterials;
-            for (int i = 0; i < materials.Length; i++)
-            {
-                if (materials[i] == null || !materials[i].HasProperty("_Color")) continue;
-                if (!TintedMaterials.TryGetValue((materials[i], tint), out Material tinted))
-                {
-                    tinted = new Material(materials[i]) { color = tint };
-                    TintedMaterials[(materials[i], tint)] = tinted;
-                }
-                materials[i] = tinted;
-            }
-            renderer.sharedMaterials = materials;
-        }
     }
 }

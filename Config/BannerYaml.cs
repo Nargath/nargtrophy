@@ -18,12 +18,14 @@ internal static class BannerYaml
     {
         Radius = 30f, DamageBonus = 0.15f, DamageReduction = 0.15f, Duration = 0f, Cooldown = 0f,
         Station = "piece_workbench", StationLevel = 1, Trophies = 8, SourcePrefab = "piece_banner01",
+        TrophyMount = new MountDto { Enabled = true, Size = 0.9f, Offset = new() { 0f, 0f, 0f }, Rotation = new() { 0f, 0f, 0f } },
     };
 
     private static readonly KindDto BuiltInPortable = new()
     {
         Radius = 12f, DamageBonus = 0.30f, DamageReduction = 0.25f, Duration = 300f, Cooldown = 900f,
         Station = "piece_workbench", StationLevel = 1, Trophies = 10, SourcePrefab = "piece_banner01",
+        TrophyMount = new MountDto { Enabled = true, Size = 0.9f, Offset = new() { 0f, 0f, 0f }, Rotation = new() { 0f, 0f, 0f } },
     };
 
     /// <summary>Parses the file text. Returns null if the YAML itself can't be read.</summary>
@@ -53,6 +55,10 @@ internal static class BannerYaml
 
         KindDto permanentDefaults = Merge(BuiltInPermanent, file.Defaults?.Permanent);
         KindDto portableDefaults = Merge(BuiltInPortable, file.Defaults?.Portable);
+        var rarities = new Dictionary<string, RarityDto>((file.Defaults?.Rarity ?? new Dictionary<string, RarityDto?>())
+            .Where(pair => pair.Value != null).ToDictionary(pair => pair.Key, pair => pair.Value!), StringComparer.OrdinalIgnoreCase);
+        var biomes = new Dictionary<string, BiomeDto>((file.Defaults?.Biomes ?? new Dictionary<string, BiomeDto?>())
+            .Where(pair => pair.Value != null).ToDictionary(pair => pair.Key, pair => pair.Value!), StringComparer.OrdinalIgnoreCase);
         var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var seenCreatures = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -79,21 +85,44 @@ internal static class BannerYaml
                 continue;
             }
 
+            // Layers, weakest first: built-in < defaults < biome < entry. Rarity sets the trophy count unless
+            // the entry gives one itself.
+            BiomeDto? biome = null;
+            string biomeName = dto.Biome?.Trim() ?? "";
+            if (biomeName.Length > 0 && !biomes.TryGetValue(biomeName, out biome))
+                Plugin.Log.LogWarning($"{where}: biome '{biomeName}' isn't in defaults.biomes. Using plain defaults.");
+            RarityDto? rarity = null;
+            string rarityName = dto.Rarity?.Trim() ?? "";
+            if (rarityName.Length > 0 && !rarities.TryGetValue(rarityName, out rarity))
+                Plugin.Log.LogWarning($"{where}: rarity '{rarityName}' isn't in defaults.rarity. Using plain defaults.");
+
+            KindDto permanent = Merge(Merge(permanentDefaults, biome?.Permanent), dto.Permanent);
+            KindDto portable = Merge(Merge(portableDefaults, biome?.Portable), dto.Portable);
+            // Merged as a new layer: Merge can return a shared defaults object, which must not be changed.
+            if (dto.Permanent?.Trophies == null && rarity?.Permanent != null)
+                permanent = Merge(permanent, new KindDto { Trophies = rarity.Permanent });
+            if (dto.Portable?.Trophies == null && rarity?.Portable != null)
+                portable = Merge(portable, new KindDto { Trophies = rarity.Portable });
+
             var def = new BannerDefinition
             {
                 Id = dto.Id!,
                 Creature = dto.Creature!.Trim(),
                 AlsoMatches = dto.AlsoMatches?.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).ToList() ?? new List<string>(),
                 Trophy = dto.Trophy!.Trim(),
+                Biome = biomeName,
+                Rarity = rarityName,
                 Enabled = dto.Enabled ?? true,
-                Permanent = ToValues(Merge(permanentDefaults, dto.Permanent), where + " (permanent)"),
-                Portable = ToValues(Merge(portableDefaults, dto.Portable), where + " (portable)"),
+                Permanent = ToValues(permanent, where + " (permanent)"),
+                Portable = ToValues(portable, where + " (portable)"),
             };
 
-            if (!string.IsNullOrWhiteSpace(dto.Tint))
+            // Tint: the entry's own, else its biome's (fallback for modded entries), else the source's colours.
+            string? tintText = !string.IsNullOrWhiteSpace(dto.Tint) ? dto.Tint : biome?.Tint;
+            if (!string.IsNullOrWhiteSpace(tintText))
             {
-                if (ColorUtility.TryParseHtmlString(dto.Tint, out Color tint)) def.Tint = tint;
-                else Plugin.Log.LogWarning($"{where}: tint '{dto.Tint}' isn't a colour (use \"#rrggbb\"). No tint.");
+                if (ColorUtility.TryParseHtmlString(tintText, out Color tint)) def.Tint = tint;
+                else Plugin.Log.LogWarning($"{where}: tint '{tintText}' isn't a colour (use \"#rrggbb\"). No tint.");
             }
 
             def.CreatureHashes = new[] { def.Creature }.Concat(def.AlsoMatches)
@@ -128,7 +157,30 @@ internal static class BannerYaml
             Trophies = over.Trophies ?? under.Trophies,
             Extra = over.Extra ?? under.Extra,
             SourcePrefab = string.IsNullOrWhiteSpace(over.SourcePrefab) ? under.SourcePrefab : over.SourcePrefab,
+            TrophyMount = MergeMount(under.TrophyMount, over.TrophyMount),
         };
+    }
+
+    /// <summary>Field by field, so an entry can change just the size or just the offset.</summary>
+    private static MountDto? MergeMount(MountDto? under, MountDto? over)
+    {
+        if (over == null) return under;
+        if (under == null) return over;
+        return new MountDto
+        {
+            Enabled = over.Enabled ?? under.Enabled,
+            Size = over.Size ?? under.Size,
+            Offset = over.Offset ?? under.Offset,
+            Rotation = over.Rotation ?? under.Rotation,
+        };
+    }
+
+    private static Vector3 ToVector(List<float>? values, string where, string field)
+    {
+        if (values == null) return Vector3.zero;
+        if (values.Count == 3) return new Vector3(values[0], values[1], values[2]);
+        Plugin.Log.LogWarning($"{where}: trophyMount.{field} needs three numbers [x, y, z]. Using [0, 0, 0].");
+        return Vector3.zero;
     }
 
     private static BannerValues ToValues(KindDto dto, string where)
@@ -144,7 +196,16 @@ internal static class BannerYaml
             StationLevel = Math.Max(1, dto.StationLevel ?? 1),
             Trophies = dto.Trophies ?? 0,
             SourcePrefab = dto.SourcePrefab?.Trim() ?? "",
+            MountEnabled = dto.TrophyMount?.Enabled ?? true,
+            MountSize = dto.TrophyMount?.Size ?? 0.9f,
+            MountOffset = ToVector(dto.TrophyMount?.Offset, where, "offset"),
+            MountRotation = ToVector(dto.TrophyMount?.Rotation, where, "rotation"),
         };
+        if (values.MountSize <= 0f)
+        {
+            Plugin.Log.LogWarning($"{where}: trophyMount.size must be above 0. Using 0.9.");
+            values.MountSize = 0.9f;
+        }
 
         if (values.Radius <= 0f)
         {
@@ -195,6 +256,23 @@ internal static class BannerYaml
     {
         public KindDto? Permanent { get; set; }
         public KindDto? Portable { get; set; }
+        public Dictionary<string, RarityDto?>? Rarity { get; set; }
+        public Dictionary<string, BiomeDto?>? Biomes { get; set; }
+    }
+
+    /// <summary>Trophy counts for a rarity bucket.</summary>
+    private sealed class RarityDto
+    {
+        public int? Permanent { get; set; }
+        public int? Portable { get; set; }
+    }
+
+    /// <summary>Per-biome layer: a fallback tint and any kind values (usually the extra materials).</summary>
+    private sealed class BiomeDto
+    {
+        public string? Tint { get; set; }
+        public KindDto? Permanent { get; set; }
+        public KindDto? Portable { get; set; }
     }
 
     private sealed class BannerDto
@@ -204,6 +282,8 @@ internal static class BannerYaml
         public List<string>? AlsoMatches { get; set; }
         public string? Trophy { get; set; }
         public string? Tint { get; set; }
+        public string? Biome { get; set; }
+        public string? Rarity { get; set; }
         public bool? Enabled { get; set; }
         public KindDto? Permanent { get; set; }
         public KindDto? Portable { get; set; }
@@ -221,6 +301,15 @@ internal static class BannerYaml
         public int? Trophies { get; set; }
         public List<CostDto?>? Extra { get; set; }
         public string? SourcePrefab { get; set; }
+        public MountDto? TrophyMount { get; set; }
+    }
+
+    private sealed class MountDto
+    {
+        public bool? Enabled { get; set; }
+        public float? Size { get; set; }
+        public List<float>? Offset { get; set; }
+        public List<float>? Rotation { get; set; }
     }
 
     private sealed class CostDto

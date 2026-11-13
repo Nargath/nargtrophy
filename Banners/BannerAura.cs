@@ -104,6 +104,9 @@ internal static class BannerAura
             // creature; Active Effects gets the full name.
             if (current == null) continue;
             current.m_name = effect.FromPortable ? "$nt_hud_rallied" : "$nt_hud_guarded";
+            // The icon's frame matches the label: cloth on a crossbar (Guarded) or on a pole (Rallied).
+            Sprite? icon = effect.FromPortable ? BannerPieces.StandardIcon(def) : BannerPieces.BannerIcon(def);
+            if (icon != null) current.m_icon = icon;
             if (current is SE_TrophyBanner aura)
                 aura.m_longName = $"{current.m_name}: {def.CreatureName} {(effect.FromPortable ? "$nt_portable" : "$nt_banner")}";
         }

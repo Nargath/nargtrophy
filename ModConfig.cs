@@ -9,6 +9,7 @@ namespace NargTrophy;
 internal static class ModConfig
 {
     public static ConfigEntry<bool> LogDamage = null!;
+    public static ConfigEntry<bool> ShowRadius = null!;
 
     public static ConfigEntry<int> PortableMaxActive = null!;
     public static ConfigEntry<bool> PortableRespectWards = null!;
@@ -18,6 +19,9 @@ internal static class ModConfig
     {
         LogDamage = config.Bind("Debug", "LogDamage", false,
             "Log every hit a banner changes, with damage before and after. Client-side; for testing balance.");
+
+        ShowRadius = config.Bind("Visuals", "ShowRadius", true,
+            "Show a banner's area as a ward-style circle while you hover it, and while placing a trophy banner. Client-side.");
 
         // Agreed default (docs/07): no cap; the per-creature cooldown is the limit.
         PortableMaxActive = config.Bind("Portable", "MaxActivePerPlayer", 0,

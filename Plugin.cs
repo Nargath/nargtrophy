@@ -1,6 +1,8 @@
 using BepInEx;
 using HarmonyLib;
+using Jotunn.Managers;
 using Jotunn.Utils;
+using NargTrophy.Commands;
 using NargTrophy.Banners;
 using NargTrophy.Config;
 using NargTrophy.Sync;
@@ -31,6 +33,9 @@ public class Plugin : BaseUnityPlugin
         BannerRegistry.Init();
         BannerSync.Init();
         BannerPieces.Init();
+        CommandManager.Instance.AddConsoleCommand(new TrophyDumpCommand());
+        CommandManager.Instance.AddConsoleCommand(new RemountCommand());
+        CommandManager.Instance.AddConsoleCommand(new StandardsCommand());
 
         _harmony = new Harmony(PluginGUID);
         _harmony.PatchAll();
