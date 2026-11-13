@@ -37,6 +37,7 @@ internal static class BannerYaml
         Radius = 30f, DamageBonus = 0.15f, DamageReduction = 0.15f, Duration = 0f, Cooldown = 0f,
         Station = "piece_workbench", StationLevel = 1, Trophies = 8, SourcePrefab = "piece_banner01",
         TrophyMount = new MountDto { Enabled = true, Size = 0.9f, Offset = new() { 0f, 0f, 0f }, Rotation = new() { 0f, 0f, 0f } },
+        Upgrade = new UpgradeDto { MaxLevel = 3, DamageBonus = 0.05f, DamageReduction = 0.03f, Radius = 3f, Trophies = 4 },
     };
 
     private static readonly KindDto BuiltInPortable = new()
@@ -44,6 +45,7 @@ internal static class BannerYaml
         Radius = 12f, DamageBonus = 0.30f, DamageReduction = 0.25f, Duration = 300f, Cooldown = 900f,
         Station = "piece_workbench", StationLevel = 1, Trophies = 10, SourcePrefab = "piece_banner01",
         TrophyMount = new MountDto { Enabled = true, Size = 0.9f, Offset = new() { 0f, 0f, 0f }, Rotation = new() { 0f, 0f, 0f } },
+        Upgrade = new UpgradeDto { MaxLevel = 3, DamageBonus = 0.05f, DamageReduction = 0.03f, Radius = 2f, Trophies = 4 },
     };
 
     /// <summary>One file: banners.yml alone (kept for simple callers and tests).</summary>
@@ -202,6 +204,13 @@ internal static class BannerYaml
                 permanent = Merge(permanent, new KindDto { Trophies = rarity.Permanent });
             if (dto.Portable?.Trophies == null && rarity?.Portable != null)
                 portable = Merge(portable, new KindDto { Trophies = rarity.Portable });
+            if (rarity?.Upgrade != null)
+            {
+                if (dto.Permanent?.Upgrade?.Trophies == null)
+                    permanent = Merge(permanent, new KindDto { Upgrade = new UpgradeDto { Trophies = rarity.Upgrade } });
+                if (dto.Portable?.Upgrade?.Trophies == null)
+                    portable = Merge(portable, new KindDto { Upgrade = new UpgradeDto { Trophies = rarity.Upgrade } });
+            }
 
             var def = new BannerDefinition
             {
@@ -255,6 +264,23 @@ internal static class BannerYaml
             Extra = over.Extra ?? under.Extra,
             SourcePrefab = string.IsNullOrWhiteSpace(over.SourcePrefab) ? under.SourcePrefab : over.SourcePrefab,
             TrophyMount = MergeMount(under.TrophyMount, over.TrophyMount),
+            Upgrade = MergeUpgrade(under.Upgrade, over.Upgrade),
+        };
+    }
+
+    /// <summary>Field by field, like the mount.</summary>
+    private static UpgradeDto? MergeUpgrade(UpgradeDto? under, UpgradeDto? over)
+    {
+        if (over == null) return under;
+        if (under == null) return over;
+        return new UpgradeDto
+        {
+            MaxLevel = over.MaxLevel ?? under.MaxLevel,
+            DamageBonus = over.DamageBonus ?? under.DamageBonus,
+            DamageReduction = over.DamageReduction ?? under.DamageReduction,
+            Radius = over.Radius ?? under.Radius,
+            Trophies = over.Trophies ?? under.Trophies,
+            Extra = over.Extra ?? under.Extra,
         };
     }
 
@@ -325,20 +351,34 @@ internal static class BannerYaml
             values.Trophies = 1;
         }
 
-        if (dto.Extra != null)
-        {
-            foreach (CostDto? cost in dto.Extra)
-            {
-                if (cost == null || string.IsNullOrWhiteSpace(cost.Item) || cost.Amount < 1)
-                {
-                    Plugin.Log.LogWarning($"{where}: an 'extra' cost needs an item and an amount of at least 1. Skipped.");
-                    continue;
-                }
-                values.Extra.Add(new ExtraCost(cost.Item!.Trim(), cost.Amount));
-            }
-        }
+        values.Extra = ToCosts(dto.Extra, where, "extra");
+
+        UpgradeDto upgrade = dto.Upgrade ?? new UpgradeDto();
+        values.MaxLevel = Math.Max(0, upgrade.MaxLevel ?? 0);
+        values.LevelDamageBonus = Math.Max(0f, upgrade.DamageBonus ?? 0f);
+        values.LevelDamageReduction = Math.Max(0f, upgrade.DamageReduction ?? 0f);
+        values.LevelRadius = Math.Max(0f, upgrade.Radius ?? 0f);
+        values.UpgradeTrophies = Math.Max(0, upgrade.Trophies ?? 0);
+        // Upgrade materials default to the kind's own extra materials (so the biome's apply).
+        values.UpgradeExtra = upgrade.Extra != null ? ToCosts(upgrade.Extra, where, "upgrade.extra") : new List<ExtraCost>(values.Extra);
 
         return values;
+    }
+
+    private static List<ExtraCost> ToCosts(List<CostDto?>? costs, string where, string field)
+    {
+        var result = new List<ExtraCost>();
+        if (costs == null) return result;
+        foreach (CostDto? cost in costs)
+        {
+            if (cost == null || string.IsNullOrWhiteSpace(cost.Item) || cost.Amount < 1)
+            {
+                Plugin.Log.LogWarning($"{where}: a '{field}' cost needs an item and an amount of at least 1. Skipped.");
+                continue;
+            }
+            result.Add(new ExtraCost(cost.Item!.Trim(), cost.Amount));
+        }
+        return result;
     }
 
     // ---- YAML shape. Nullable so "not set" can fall back to defaults. ----
@@ -366,6 +406,18 @@ internal static class BannerYaml
     {
         public int? Permanent { get; set; }
         public int? Portable { get; set; }
+        /// <summary>Trophies per upgrade step, both kinds.</summary>
+        public int? Upgrade { get; set; }
+    }
+
+    private sealed class UpgradeDto
+    {
+        public int? MaxLevel { get; set; }
+        public float? DamageBonus { get; set; }
+        public float? DamageReduction { get; set; }
+        public float? Radius { get; set; }
+        public int? Trophies { get; set; }
+        public List<CostDto?>? Extra { get; set; }
     }
 
     /// <summary>Per-biome layer: a fallback tint and any kind values (usually the extra materials).</summary>
@@ -404,6 +456,7 @@ internal static class BannerYaml
         public List<CostDto?>? Extra { get; set; }
         public string? SourcePrefab { get; set; }
         public MountDto? TrophyMount { get; set; }
+        public UpgradeDto? Upgrade { get; set; }
     }
 
     private sealed class MountDto

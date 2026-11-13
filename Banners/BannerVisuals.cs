@@ -283,30 +283,30 @@ internal static class BannerVisuals
     /// <summary>Colour of the expiry poof: warm gold, unlike the grey corpse smoke.</summary>
     public static readonly Color PoofColour = new(1f, 0.78f, 0.35f);
 
-    private static readonly Dictionary<string, GameObject> Poofs = new();
+    private static GameObject? _poof;
+    private static bool _poofBuilt;
+
+    /// <summary>Creature whose corpse effect every war standard's expiry poof uses (agreed 2026-11-13).</summary>
+    private const string PoofCreature = "Bjorn";
 
     /// <summary>
-    /// The expiry "poof": a copy of the effect vanilla plays when this creature's corpse disappears (its ragdoll's
-    /// remove effect), recoloured gold. One copy per source effect. Played locally on every client at the synced
-    /// expiry time, so the network part is stripped and it removes itself on a timer. Null if the creature has
-    /// no corpse effect.
+    /// The expiry "poof", one for every war standard (agreed in game 2026-11-13): the bear's corpse-vanishing effect
+    /// (its smoke is bright and takes the gold tint well; other creatures' effects vary from a huge cloud to a dark
+    /// puff), tinted gold and shrunk so the cloud is about half the standard's height. Played locally on every
+    /// client at the synced expiry time, so the network part is stripped and it removes itself on a timer.
+    /// Falls back to <paramref name="fallback"/>'s own corpse effect if the bear isn't there. Null if neither has one.
     /// </summary>
-    public static GameObject? MakePoof(Character creature)
+    /// <param name="standardHeight">Height of the planted standard in metres; the cloud is sized to half of it.</param>
+    public static GameObject? MakePoof(Character fallback, float standardHeight)
     {
+        if (_poofBuilt) return _poof;
+
         GameObject? source = null;
-        foreach (EffectList.EffectData death in creature.m_deathEffects.m_effectPrefabs)
-        {
-            if (death?.m_prefab == null || !death.m_prefab.TryGetComponent(out Ragdoll ragdoll)) continue;
-            foreach (EffectList.EffectData remove in ragdoll.m_removeEffect.m_effectPrefabs)
-            {
-                if (remove?.m_prefab == null) continue;
-                source = remove.m_prefab;
-                break;
-            }
-            if (source != null) break;
-        }
+        if (PrefabManager.Instance.GetPrefab(PoofCreature) is { } bear && bear.TryGetComponent(out Character bearCharacter))
+            source = CorpseEffect(bearCharacter);
+        source ??= CorpseEffect(fallback);
         if (source == null) return null;
-        if (Poofs.TryGetValue(source.name, out GameObject cached)) return cached;
+        _poofBuilt = true;
 
         GameObject poof = PrefabManager.Instance.CreateClonedPrefab($"nt_poof_{source.name}", source);
         foreach (ZSyncTransform sync in poof.GetComponentsInChildren<ZSyncTransform>(true)) Object.DestroyImmediate(sync);
@@ -318,10 +318,10 @@ internal static class BannerVisuals
             timer.m_triggerOnAwake = true;
         }
 
-        foreach (ParticleSystem particles in poof.GetComponentsInChildren<ParticleSystem>(true))
+        ParticleSystem[] systems = poof.GetComponentsInChildren<ParticleSystem>(true);
+        foreach (ParticleSystem particles in systems)
         {
-            // Tint, don't replace: multiplying keeps each system's own brightness and transparency, so smoke stays
-            // smoke and sparks turn gold. (Replacing the colour outright turned the smoke into a black cloud.)
+            // Tint, don't replace: multiplying keeps each system's own brightness and transparency.
             ParticleSystem.MainModule main = particles.main;
             ParticleSystem.MinMaxGradient start = main.startColor;
             start.color *= PoofColour;
@@ -329,11 +329,73 @@ internal static class BannerVisuals
             start.colorMax *= PoofColour;
             main.startColor = start;
         }
-        // The effect's own light (pink in game) follows the same colour.
+        // The effect's own light follows the same colour.
         foreach (Light light in poof.GetComponentsInChildren<Light>(true)) light.color = PoofColour;
 
-        Poofs[source.name] = poof;
+        // Size: scaling the transform isn't reliable for particles (each system has its own scaling mode), so the
+        // effect's own numbers are scaled instead. Reach = how far its particles get from the centre, estimated
+        // from shape size, start speed x lifetime and start size. The cloud's height is about twice the reach.
+        float reach = EstimateReach(systems);
+        float target = Mathf.Max(0.2f, standardHeight * 0.5f) / 2f;
+        float factor = reach > 0.01f ? Mathf.Clamp(target / reach, 0.02f, 1f) : 1f;
+        ScaleEffect(poof, systems, factor);
+        Plugin.Log.LogInfo($"War standard poof: '{source.name}' scaled x{factor:0.###} (estimated reach {reach:0.##} m -> {target:0.##} m).");
+
+        _poof = poof;
         return poof;
+    }
+
+    private static GameObject? CorpseEffect(Character creature)
+    {
+        foreach (EffectList.EffectData death in creature.m_deathEffects.m_effectPrefabs)
+        {
+            if (death?.m_prefab == null || !death.m_prefab.TryGetComponent(out Ragdoll ragdoll)) continue;
+            foreach (EffectList.EffectData remove in ragdoll.m_removeEffect.m_effectPrefabs)
+                if (remove?.m_prefab != null) return remove.m_prefab;
+        }
+        return null;
+    }
+
+    private static float EstimateReach(ParticleSystem[] systems)
+    {
+        float reach = 0f;
+        foreach (ParticleSystem particles in systems)
+        {
+            ParticleSystem.MainModule main = particles.main;
+            ParticleSystem.ShapeModule shape = particles.shape;
+            float shapeSize = shape.enabled ? Mathf.Max(shape.radius, Mathf.Max(shape.scale.x, shape.scale.z) * 0.5f) : 0f;
+            float travel = main.startSpeed.constantMax * main.startLifetime.constantMax;
+            float size = main.startSize.constantMax * 0.5f;
+            reach = Mathf.Max(reach, particles.transform.localPosition.magnitude + shapeSize + travel + size);
+        }
+        return reach;
+    }
+
+    private static void ScaleEffect(GameObject poof, ParticleSystem[] systems, float factor)
+    {
+        foreach (ParticleSystem particles in systems)
+        {
+            ParticleSystem.MainModule main = particles.main;
+            main.startSizeMultiplier *= factor;
+            main.startSpeedMultiplier *= factor;
+            main.gravityModifierMultiplier *= factor;
+
+            ParticleSystem.ShapeModule shape = particles.shape;
+            shape.radius *= factor;
+            shape.scale *= factor;
+            shape.position *= factor;
+
+            ParticleSystem.VelocityOverLifetimeModule velocity = particles.velocityOverLifetime;
+            if (velocity.enabled)
+            {
+                velocity.xMultiplier *= factor;
+                velocity.yMultiplier *= factor;
+                velocity.zMultiplier *= factor;
+            }
+        }
+        foreach (Transform child in poof.GetComponentsInChildren<Transform>(true))
+            if (child != poof.transform) child.localPosition *= factor;
+        foreach (Light light in poof.GetComponentsInChildren<Light>(true)) light.range *= factor;
     }
 
     private static void StripToVisuals(GameObject model)

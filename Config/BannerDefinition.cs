@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -42,6 +43,65 @@ internal sealed class BannerValues
     public float MountSize;
     public Vector3 MountOffset;
     public Vector3 MountRotation;
+
+    // Upgrades (phase 5). Level 1 is the built banner; MaxLevel more levels can be added. Each level adds the
+    // Level* values. Cost to reach a level = (UpgradeTrophies trophies + UpgradeExtra) x the vanilla quality
+    // multiplier (x1, x2, x4 for levels 2, 3, 4), the same formula vanilla item upgrades use.
+    public int MaxLevel;
+    public float LevelDamageBonus;
+    public float LevelDamageReduction;
+    public float LevelRadius;
+    public int UpgradeTrophies;
+    public List<ExtraCost> UpgradeExtra = new();
+
+    /// <summary>Highest level (base + upgrades).</summary>
+    public int TopLevel => 1 + MaxLevel;
+
+    /// <summary>Damage reduction never reaches 100%.</summary>
+    public const float MaxReduction = 0.9f;
+
+    /// <summary>The values at a level (clamped to 1..TopLevel).</summary>
+    public LevelValues At(int level)
+    {
+        int steps = Mathf.Clamp(level, 1, TopLevel) - 1;
+        return new LevelValues(
+            Mathf.Clamp(level, 1, TopLevel),
+            Radius + LevelRadius * steps,
+            DamageBonus + LevelDamageBonus * steps,
+            Mathf.Min(MaxReduction, DamageReduction + LevelDamageReduction * steps));
+    }
+
+    /// <summary>Vanilla's quality cost multiplier (Piece.Requirement.GetAmount): x1, x2, x4, then +0.5 per level.</summary>
+    public static float UpgradeMultiplier(int targetLevel) =>
+        targetLevel <= 1 ? 0f : targetLevel >= 4 ? 4f + (targetLevel - 4) / 2f : targetLevel - 1;
+
+    /// <summary>Items needed to go from targetLevel - 1 to targetLevel (prefab name, amount).</summary>
+    public List<ExtraCost> UpgradeCost(string trophy, int targetLevel)
+    {
+        float multiplier = UpgradeMultiplier(targetLevel);
+        var cost = new List<ExtraCost>();
+        if (UpgradeTrophies > 0) cost.Add(new ExtraCost(trophy, (int)Math.Floor(UpgradeTrophies * multiplier)));
+        foreach (ExtraCost extra in UpgradeExtra) cost.Add(new ExtraCost(extra.Item, (int)Math.Floor(extra.Amount * multiplier)));
+        cost.RemoveAll(c => c.Amount <= 0);
+        return cost;
+    }
+}
+
+/// <summary>A banner's values at one level.</summary>
+internal readonly struct LevelValues
+{
+    public readonly int Level;
+    public readonly float Radius;
+    public readonly float DamageBonus;
+    public readonly float DamageReduction;
+
+    public LevelValues(int level, float radius, float bonus, float reduction)
+    {
+        Level = level;
+        Radius = radius;
+        DamageBonus = bonus;
+        DamageReduction = reduction;
+    }
 }
 
 /// <summary>

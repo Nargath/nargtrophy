@@ -13,8 +13,11 @@ namespace NargTrophy.Banners;
 /// Planted portable banners also carry their expiry (server time ticks) and planter in the ZDO. Whoever owns
 /// the ZDO removes the banner once it has expired, so it disappears for everyone, including after relogs and
 /// zone reloads (checked on load too). Other clients stop counting it as soon as it expires.
+///
+/// Upgrades (phase 5): both kinds have a level in the ZDO. A trophy banner is upgraded here with Use (E); a war
+/// standard's level is its item's quality, written when planted. See <see cref="BannerUpgrades"/>.
 /// </summary>
-public class TrophyBanner : MonoBehaviour, Hoverable
+public class TrophyBanner : MonoBehaviour, Hoverable, Interactable
 {
     public static readonly List<TrophyBanner> Active = new();
 
@@ -76,14 +79,21 @@ public class TrophyBanner : MonoBehaviour, Hoverable
         BannerAura.MarkDirty();
     }
 
-    /// <summary>The definition and values this banner uses right now, if it's active.</summary>
-    internal bool TryGetValues(out BannerDefinition def, out BannerValues values)
+    /// <summary>The definition and this banner's values at its level, if it's active.</summary>
+    internal bool TryGetValues(out BannerDefinition def, out LevelValues values)
     {
-        values = null!;
+        values = default;
         if (!BannerRegistry.TryGet(m_bannerId, out def) || !def.IsActive) return false;
         if (Kind == BannerKind.Portable && IsExpired()) return false;
-        values = def.Get(Kind);
+        values = def.Get(Kind).At(Level(def));
         return true;
+    }
+
+    /// <summary>This banner's level (1 = not upgraded), clamped to the current config's cap.</summary>
+    internal int Level(BannerDefinition def)
+    {
+        int stored = _nview != null && _nview.GetZDO() is { } zdo ? zdo.GetInt(BannerUpgrades.ZdoLevel, 1) : 1;
+        return Mathf.Clamp(stored, 1, def.Get(Kind).TopLevel);
     }
 
     // ---- Portable timer ----
@@ -103,10 +113,11 @@ public class TrophyBanner : MonoBehaviour, Hoverable
     internal bool IsExpired() => SecondsLeft() is <= 0f;
 
     /// <summary>Called by the planter right after spawning, before anyone else can see the banner.</summary>
-    internal void Setup(Player planter, float duration)
+    internal void Setup(Player planter, float duration, int level)
     {
         if (_nview == null || _nview.GetZDO() is not { } zdo || !BannerCooldowns.TryGetNow(out long now)) return;
         zdo.Set(ZdoExpire, now + TimeSpan.FromSeconds(duration).Ticks);
+        zdo.Set(BannerUpgrades.ZdoLevel, Math.Max(1, level));
         zdo.Set(ZdoOwner, planter.GetPlayerID());
         zdo.Set(ZdoOwnerName, planter.GetPlayerName());
     }
@@ -159,11 +170,21 @@ public class TrophyBanner : MonoBehaviour, Hoverable
             return Localization.instance.Localize(text.ToString());
         }
 
-        BannerValues values = def.Get(Kind);
+        BannerValues kind = def.Get(Kind);
+        LevelValues values = kind.At(Level(def));
         ShowAreaMarker(values.Radius);
+        if (kind.TopLevel > 1) text.Append($"\n$nt_hover_level <color=orange>{values.Level}/{kind.TopLevel}</color>");
         text.Append($"\n<color=orange>+{Percent(values.DamageBonus)}%</color> $nt_hover_damage_dealt");
         text.Append($"\n<color=orange>-{Percent(values.DamageReduction)}%</color> $nt_hover_damage_taken");
         text.Append($"\n$nt_hover_radius: <color=orange>{values.Radius:0.#} m</color>");
+
+        if (Kind == BannerKind.Permanent && kind.TopLevel > 1)
+        {
+            if (values.Level >= kind.TopLevel)
+                text.Append("\n$nt_hover_max_level");
+            else
+                text.Append($"\n[<color=yellow><b>$KEY_Use</b></color>] $nt_hover_upgrade: {BannerUpgrades.Describe(kind.UpgradeCost(def.Trophy, values.Level + 1))}");
+        }
 
         if (Kind == BannerKind.Portable)
         {
@@ -179,6 +200,27 @@ public class TrophyBanner : MonoBehaviour, Hoverable
     }
 
     public float GetHoverOffset() => 0f;
+
+    // ---- Upgrade (trophy banner) ----
+
+    public bool Interact(Humanoid user, bool hold, bool alt)
+    {
+        if (hold || Kind != BannerKind.Permanent || user is not Player player || player != Player.m_localPlayer) return false;
+        if (_nview == null || !_nview.IsValid()) return false;
+        if (!BannerRegistry.TryGet(m_bannerId, out BannerDefinition def) || !def.IsActive) return false;
+        if (def.Permanent.TopLevel <= 1) return false;
+
+        int before = BannerUpgrades.GetLevel(_nview, def);
+        player.Message(MessageHud.MessageType.Center, BannerUpgrades.TryUpgrade(player, _nview, def));
+        if (BannerUpgrades.GetLevel(_nview, def) > before)
+        {
+            if (_piece != null) _piece.m_placeEffect.Create(transform.position, transform.rotation, transform);
+            BannerAura.MarkDirty();
+        }
+        return true;
+    }
+
+    public bool UseItem(Humanoid user, ItemDrop.ItemData item) => false;
 
     /// <summary>Same pattern as the ward: hovering keeps the circle on; it hides half a second after.</summary>
     private void ShowAreaMarker(float radius)

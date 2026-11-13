@@ -18,7 +18,7 @@ namespace NargTrophy.Banners;
 /// </summary>
 internal static class PortablePlanting
 {
-    public static void TryPlant(Player player, BannerDefinition def)
+    public static void TryPlant(Player player, BannerDefinition def, ItemDrop.ItemData item)
     {
         if (!def.IsActive)
         {
@@ -66,7 +66,8 @@ internal static class PortablePlanting
         float viewYaw = player.transform.rotation.eulerAngles.y;
         Quaternion rotation = Quaternion.Euler(0f, viewYaw + 180f - BannerPieces.FrontYaw(def), 0f);
         GameObject planted = Object.Instantiate(prefab, position, rotation);
-        if (planted.TryGetComponent(out TrophyBanner banner)) banner.Setup(player, def.Portable.Duration);
+        // The item's quality is the standard's level (upgraded at the crafting station like gear).
+        if (planted.TryGetComponent(out TrophyBanner banner)) banner.Setup(player, def.Portable.Duration, Mathf.Clamp(item.m_quality, 1, def.Portable.TopLevel));
         if (prefab.TryGetComponent(out Piece piece))
             piece.m_placeEffect.Create(position, rotation, planted.transform, 1f, -1, player.GetZDOID());
 

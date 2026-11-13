@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Jotunn.Configs;
 using Jotunn.Entities;
 using Jotunn.Managers;
@@ -49,9 +50,15 @@ internal static class BannerPieces
     public static bool TryGetPortable(ItemDrop.ItemData item, out BannerDefinition def)
     {
         def = null!;
-        GameObject? prefab = item?.m_dropPrefab;
-        return prefab != null && ByItemName.TryGetValue(prefab.name, out def);
+        if (item == null) return false;
+        GameObject? prefab = item.m_dropPrefab;
+        if (prefab != null && ByItemName.TryGetValue(prefab.name, out def)) return true;
+        // The crafting screen's preview uses the prefab's own item data, which may have no drop prefab set.
+        // Every copy of an item shares the prefab's SharedData object, so match on that.
+        return item.m_shared != null && ByShared.TryGetValue(item.m_shared, out def);
     }
+
+    private static readonly Dictionary<ItemDrop.ItemData.SharedData, BannerDefinition> ByShared = new();
 
     public static GameObject? PlantedPrefab(BannerDefinition def) =>
         PlantedPrefabs.TryGetValue(def.Id, out GameObject prefab) ? prefab : null;
@@ -238,7 +245,11 @@ internal static class BannerPieces
         BannerVisuals.MakeFreeStanding(prefab, nonSolid);
         BannerVisuals.MountTrophy(prefab, trophy, values, def.Id);
         banner.m_areaMarker = BannerVisuals.AddAreaMarker(prefab);
-        prefab.AddComponent<StandardExpiry>().m_poof = BannerVisuals.MakePoof(creature);
+        // Same poof for every standard, sized to the standard (all war standards share one look and scale).
+        float height = BannerVisuals.TryGetMeshBounds(prefab.transform, prefab.transform, out Bounds standardBounds, out _)
+            ? standardBounds.max.y * prefab.transform.localScale.y
+            : 1.8f;
+        prefab.AddComponent<StandardExpiry>().m_poof = BannerVisuals.MakePoof(creature, height);
 
         PrefabManager.Instance.AddPrefab(prefab);
         PlantedPrefabs[def.Id] = prefab;
@@ -261,6 +272,7 @@ internal static class BannerPieces
         shared.m_description = "$nt_portable_desc";
         shared.m_itemType = ItemDrop.ItemData.ItemType.Consumable;
         shared.m_maxStackSize = 1;
+        shared.m_maxQuality = def.Portable.TopLevel; // upgrades: vanilla item quality (phase 5)
         shared.m_value = 0;          // not sold to traders
         shared.m_questItem = false;
         shared.m_food = 0f;
@@ -281,11 +293,12 @@ internal static class BannerPieces
             Amount = 1,
             CraftingStation = values.Station,
             MinStationLevel = values.StationLevel,
-            Requirements = PieceCosts(def, values),
+            Requirements = RecipeCosts(def, values),
         });
         ItemManager.Instance.AddRecipe(recipe);
         BuiltRecipes.Add((recipe, def));
         ByItemName[name] = def;
+        ByShared[shared] = def;
         return true;
     }
 
@@ -326,6 +339,26 @@ internal static class BannerPieces
         return costs.ToArray();
     }
 
+    /// <summary>
+    /// The war standard's recipe: crafting amounts plus per-level upgrade amounts, which vanilla multiplies for
+    /// each quality (x1, x2, x4). An item used only for upgrades gets a crafting amount of 0.
+    /// </summary>
+    private static RequirementConfig[] RecipeCosts(BannerDefinition def, BannerValues values)
+    {
+        var amounts = new List<(string item, int craft, int perLevel)> { (def.Trophy, values.Trophies, values.UpgradeTrophies) };
+        void Add(string item, int craft, int perLevel)
+        {
+            int i = amounts.FindIndex(a => a.item == item);
+            if (i < 0) amounts.Add((item, craft, perLevel));
+            else amounts[i] = (item, amounts[i].craft + craft, amounts[i].perLevel + perLevel);
+        }
+        foreach (ExtraCost extra in values.Extra) Add(extra.Item, extra.Amount, 0);
+        if (values.TopLevel > 1)
+            foreach (ExtraCost extra in values.UpgradeExtra) Add(extra.Item, 0, extra.Amount);
+        if (values.TopLevel <= 1) amounts = amounts.Select(a => (a.item, a.craft, 0)).ToList();
+        return amounts.Select(a => new RequirementConfig(a.item, a.craft, a.perLevel, true)).ToArray();
+    }
+
     /// <summary>Re-applies costs and stations after a reload or server sync. Needs ObjectDB to resolve items.</summary>
     private static void RefreshCosts()
     {
@@ -342,8 +375,9 @@ internal static class BannerPieces
             Recipe? recipe = custom.Recipe;
             if (recipe == null) continue;
             BannerValues values = def.Portable;
-            recipe.m_resources = ToRequirements(PieceCosts(def, values), def.Id);
+            recipe.m_resources = ToRequirements(RecipeCosts(def, values), def.Id);
             recipe.m_minStationLevel = values.StationLevel;
+            if (recipe.m_item != null) recipe.m_item.m_itemData.m_shared.m_maxQuality = values.TopLevel;
             if (FindStation(def, values.Station) is { } station) recipe.m_craftingStation = station;
         }
     }

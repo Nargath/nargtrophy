@@ -13,7 +13,7 @@ internal static class Translations
             // Neither is a vanilla word on its own, so they can't be mistaken for vanilla decor banners.
             // Piece: "<creature token> $nt_banner", e.g. "Greydwarf trophy banner".
             ["nt_banner"] = "trophy banner",
-            ["nt_banner_desc"] = "Players near this banner deal more damage to the creature it shows, and take less damage from it.",
+            ["nt_banner_desc"] = "A banner to hold your ground against the beast it bears.",
             ["nt_hover_damage_dealt"] = "damage dealt",
             ["nt_hover_damage_taken"] = "damage taken",
             ["nt_hover_radius"] = "Radius",
@@ -22,7 +22,7 @@ internal static class Translations
 
             // Item and planted standard: "<creature token> $nt_portable", e.g. "Greydwarf war standard".
             ["nt_portable"] = "war standard",
-            ["nt_portable_desc"] = "Use it to plant the standard at your feet for a short time. Players near it deal more damage to the creature it shows, and take less damage from it. The item is kept; it can be planted again after a cooldown.",
+            ["nt_portable_desc"] = "A standard to strike fear into your foes and inspire you in battle.",
             ["nt_hover_time_left"] = "Time left",
             ["nt_hover_planted_by"] = "Planted by",
             ["nt_hover_expired"] = "<color=grey>Fading</color>",
@@ -47,6 +47,22 @@ internal static class Translations
             ["nt_msg_ward"] = "You can't plant a war standard inside this ward",
             ["nt_msg_inactive"] = "This war standard is inactive on this server",
             ["nt_msg_planted"] = "War standard planted",
+
+            // Upgrades (phase 5). War standards use vanilla item quality, so the crafting station shows their upgrade.
+            ["nt_hover_level"] = "Level",
+            ["nt_hover_upgrade"] = "Upgrade",
+            ["nt_hover_max_level"] = "<color=grey>Fully upgraded</color>",
+            ["nt_msg_max_level"] = "This banner is fully upgraded",
+            ["nt_msg_upgraded"] = "Banner upgraded to level $1",
+            ["nt_msg_upgrade_missing"] = "To upgrade you need: $1",
+
+            // War standard tooltip.
+            ["nt_tip_when_planted"] = "When planted:",
+            ["nt_tip_duration"] = "Lasts",
+            ["nt_tip_cooldown"] = "Cooldown",
+            ["nt_tip_status"] = "Status",
+            ["nt_tip_ready"] = "Ready to plant",
+            ["nt_tip_replant"] = "Can be planted again in",
         });
     }
 }

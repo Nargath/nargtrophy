@@ -37,6 +37,10 @@ defaults:
     # The creature's trophy model on the front of the crossbar, facing out like on a wall item stand.
     # size = longest side in metres; offset and rotation ([x, y, z], metres and degrees) adjust the automatic placement. Startup only.
     trophyMount: { enabled: true, size: 0.9, offset: [0, 0, 0], rotation: [0, 0, 0] }
+    # Upgrades: hover a built trophy banner and press E to pay for the next level. Each level adds these.
+    # Cost per level = 'trophies' (set by rarity below) + the banner's extra materials, times x1, x2, x4 for
+    # levels 2, 3, 4 (vanilla's item upgrade formula). Deconstructing refunds everything spent on upgrades.
+    upgrade: { maxLevel: 3, damageBonus: 0.05, damageReduction: 0.03, radius: 3 }
   portable:                # war standard: reusable item that plants a banner for a while
     radius: 12
     damageBonus: 0.30
@@ -47,13 +51,17 @@ defaults:
     stationLevel: 1
     sourcePrefab: piece_banner01   # look of the planted standard (shown smaller, on a pole)
     trophyMount: { enabled: true, size: 0.9, offset: [0, 0, 0], rotation: [0, 0, 0] }
+    # Upgrades: vanilla item quality, at the war standard's crafting station (each level needs one more station
+    # level). Same cost formula as above. Only damage, reduction and radius improve; duration and cooldown don't.
+    upgrade: { maxLevel: 3, damageBonus: 0.05, damageReduction: 0.03, radius: 2 }
 
   # Trophy counts by how often the trophy drops (docs/02):
   #   common = 25% or more, uncommon = 10-24%, rare = under 10%.
+  # 'upgrade' = trophies per upgrade step, both kinds (times x1, x2, x4 for levels 2, 3, 4).
   rarity:
-    common:   { permanent: 12, portable: 15 }
-    uncommon: { permanent: 8,  portable: 10 }
-    rare:     { permanent: 4,  portable: 5 }
+    common:   { permanent: 12, portable: 15, upgrade: 6 }
+    uncommon: { permanent: 8,  portable: 10, upgrade: 4 }
+    rare:     { permanent: 4,  portable: 5,  upgrade: 2 }
 
   # Per biome: extra materials on top of the trophies, and a cloth colour used when an entry has no tint.
   biomes:

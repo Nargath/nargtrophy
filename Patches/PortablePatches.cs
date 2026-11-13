@@ -25,7 +25,7 @@ internal static class PortablePatches
         if (item == null || !BannerPieces.TryGetPortable(item, out BannerDefinition def)) return true;
 
         __result = false;
-        if (__instance == Player.m_localPlayer) PortablePlanting.TryPlant(__instance, def);
+        if (__instance == Player.m_localPlayer) PortablePlanting.TryPlant(__instance, def, item);
         return false;
     }
 

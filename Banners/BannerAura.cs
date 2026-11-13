@@ -54,7 +54,7 @@ internal static class BannerAura
             Vector3 position = player.transform.position;
             foreach (TrophyBanner banner in TrophyBanner.Active)
             {
-                if (banner == null || !banner.TryGetValues(out BannerDefinition def, out BannerValues values)) continue;
+                if (banner == null || !banner.TryGetValues(out BannerDefinition def, out LevelValues values)) continue;
 
                 // Flat distance, like a ward: height doesn't matter inside the circle.
                 Vector3 offset = banner.transform.position - position;
@@ -70,7 +70,7 @@ internal static class BannerAura
         BannerCooldowns.UpdateStatusEffects(player);
     }
 
-    private static Effect Strongest<TKey>(Dictionary<TKey, Effect> map, TKey key, BannerValues values, BannerKind kind)
+    private static Effect Strongest<TKey>(Dictionary<TKey, Effect> map, TKey key, LevelValues values, BannerKind kind)
     {
         map.TryGetValue(key, out Effect current);
         return new Effect
