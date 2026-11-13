@@ -23,7 +23,7 @@ internal readonly struct BannerFile
 
 /// <summary>
 /// Parses the banner files into <see cref="BannerDefinition"/>s. Invalid entries are skipped with a warning.
-/// The first file is <c>banners.yml</c>: its <c>defaults</c> (kinds, rarity, biomes) apply to every file. Extra
+/// The first file is <c>banners.yml</c>: its <c>defaults</c> (kinds, availability, biomes) apply to every file. Extra
 /// files (<c>banners.*.yml</c>, e.g. one per mod) hold <c>banners</c> and an optional file-wide
 /// <c>requiresMod</c>; a <c>defaults</c> block in them is ignored. Ids must be unique across all files.
 /// </summary>
@@ -130,7 +130,7 @@ internal static class BannerYaml
     {
         public readonly KindDto PermanentDefaults;
         public readonly KindDto PortableDefaults;
-        public readonly Dictionary<string, RarityDto> Rarities;
+        public readonly Dictionary<string, AvailabilityDto> Availabilities;
         public readonly Dictionary<string, BiomeDto> Biomes;
         public readonly HashSet<string> SeenIds = new(StringComparer.OrdinalIgnoreCase);
         public readonly Dictionary<string, string> SeenCreatures = new(StringComparer.Ordinal);
@@ -139,7 +139,7 @@ internal static class BannerYaml
         {
             PermanentDefaults = Merge(BuiltInPermanent, defaults?.Permanent);
             PortableDefaults = Merge(BuiltInPortable, defaults?.Portable);
-            Rarities = new Dictionary<string, RarityDto>((defaults?.Rarity ?? new Dictionary<string, RarityDto?>())
+            Availabilities = new Dictionary<string, AvailabilityDto>((defaults?.Availability ?? new Dictionary<string, AvailabilityDto?>())
                 .Where(pair => pair.Value != null).ToDictionary(pair => pair.Key, pair => pair.Value!), StringComparer.OrdinalIgnoreCase);
             Biomes = new Dictionary<string, BiomeDto>((defaults?.Biomes ?? new Dictionary<string, BiomeDto?>())
                 .Where(pair => pair.Value != null).ToDictionary(pair => pair.Key, pair => pair.Value!), StringComparer.OrdinalIgnoreCase);
@@ -150,7 +150,7 @@ internal static class BannerYaml
     {
         KindDto permanentDefaults = context.PermanentDefaults;
         KindDto portableDefaults = context.PortableDefaults;
-        Dictionary<string, RarityDto> rarities = context.Rarities;
+        Dictionary<string, AvailabilityDto> availabilities = context.Availabilities;
         Dictionary<string, BiomeDto> biomes = context.Biomes;
         HashSet<string> seenIds = context.SeenIds;
         Dictionary<string, string> seenCreatures = context.SeenCreatures;
@@ -178,39 +178,33 @@ internal static class BannerYaml
                 continue;
             }
 
-            ParseOne(dto, where, source, file, permanentDefaults, portableDefaults, rarities, biomes, seenCreatures, result);
+            ParseOne(dto, where, source, file, permanentDefaults, portableDefaults, availabilities, biomes, seenCreatures, result);
         }
     }
 
     private static void ParseOne(BannerDto dto, string where, string source, FileDto file, KindDto permanentDefaults, KindDto portableDefaults,
-        Dictionary<string, RarityDto> rarities, Dictionary<string, BiomeDto> biomes, Dictionary<string, string> seenCreatures,
+        Dictionary<string, AvailabilityDto> availabilities, Dictionary<string, BiomeDto> biomes, Dictionary<string, string> seenCreatures,
         List<BannerDefinition> result)
     {
-            // Layers, weakest first: built-in < defaults < biome < entry. Rarity sets the trophy count unless
-            // the entry gives one itself.
+            // Layers, weakest first: built-in < defaults < biome < entry. Availability sets kill targets (the trophy
+            // cost is then worked out from the creature's real drop chance) unless the entry sets trophies itself.
             BiomeDto? biome = null;
             string biomeName = dto.Biome?.Trim() ?? "";
             if (biomeName.Length > 0 && !biomes.TryGetValue(biomeName, out biome))
                 Plugin.Log.LogWarning($"{where}: biome '{biomeName}' isn't in defaults.biomes. Using plain defaults.");
-            RarityDto? rarity = null;
-            string rarityName = dto.Rarity?.Trim() ?? "";
-            if (rarityName.Length > 0 && !rarities.TryGetValue(rarityName, out rarity))
-                Plugin.Log.LogWarning($"{where}: rarity '{rarityName}' isn't in defaults.rarity. Using plain defaults.");
+            AvailabilityDto? availability = null;
+            string availabilityName = dto.Availability?.Trim() ?? "";
+            if (availabilityName.Length > 0 && !availabilities.TryGetValue(availabilityName, out availability))
+                Plugin.Log.LogWarning($"{where}: availability '{availabilityName}' isn't in defaults.availability. Using plain defaults.");
+            if (!string.IsNullOrWhiteSpace(dto.Rarity))
+                Plugin.Log.LogWarning($"{where}: 'rarity' was replaced by 'availability' (abundant, common, scarce, rare). " +
+                                      "Ignored; set availability instead.");
 
             KindDto permanent = Merge(Merge(permanentDefaults, biome?.Permanent), dto.Permanent);
             KindDto portable = Merge(Merge(portableDefaults, biome?.Portable), dto.Portable);
-            // Merged as a new layer: Merge can return a shared defaults object, which must not be changed.
-            if (dto.Permanent?.Trophies == null && rarity?.Permanent != null)
-                permanent = Merge(permanent, new KindDto { Trophies = rarity.Permanent });
-            if (dto.Portable?.Trophies == null && rarity?.Portable != null)
-                portable = Merge(portable, new KindDto { Trophies = rarity.Portable });
-            if (rarity?.Upgrade != null)
-            {
-                if (dto.Permanent?.Upgrade?.Trophies == null)
-                    permanent = Merge(permanent, new KindDto { Upgrade = new UpgradeDto { Trophies = rarity.Upgrade } });
-                if (dto.Portable?.Upgrade?.Trophies == null)
-                    portable = Merge(portable, new KindDto { Upgrade = new UpgradeDto { Trophies = rarity.Upgrade } });
-            }
+            // Merged as new layers: Merge can return a shared defaults object, which must not be changed.
+            permanent = ApplyAvailability(permanent, dto.Permanent, availability?.Permanent, availability?.Upgrade);
+            portable = ApplyAvailability(portable, dto.Portable, availability?.Portable, availability?.Upgrade);
 
             var def = new BannerDefinition
             {
@@ -219,7 +213,7 @@ internal static class BannerYaml
                 AlsoMatches = dto.AlsoMatches?.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).ToList() ?? new List<string>(),
                 Trophy = dto.Trophy!.Trim(),
                 Biome = biomeName,
-                Rarity = rarityName,
+                Availability = availabilityName,
                 Enabled = dto.Enabled ?? true,
                 RequiresMod = (string.IsNullOrWhiteSpace(dto.RequiresMod) ? file.RequiresMod : dto.RequiresMod)?.Trim() ?? "",
                 Permanent = ToValues(permanent, where + " (permanent)"),
@@ -248,6 +242,32 @@ internal static class BannerYaml
             result.Add(def);
     }
 
+    /// <summary>
+    /// Kill targets from the availability tier, unless the entry sets trophies or kills itself. An entry's own
+    /// trophies always win: kills are cleared so the fixed count is used.
+    /// </summary>
+    private static KindDto ApplyAvailability(KindDto merged, KindDto? entry, float? kills, float? upgradeKills)
+    {
+        KindDto result = merged;
+        if (entry?.Trophies == null && entry?.Kills == null && kills != null)
+            result = Merge(result, new KindDto { Kills = kills });
+        if (entry?.Upgrade?.Trophies == null && entry?.Upgrade?.Kills == null && upgradeKills != null)
+            result = Merge(result, new KindDto { Upgrade = new UpgradeDto { Kills = upgradeKills } });
+
+        bool fixedTrophies = entry?.Trophies != null;
+        bool fixedUpgrade = entry?.Upgrade?.Trophies != null;
+        if (!fixedTrophies && !fixedUpgrade) return result;
+        // Copy before clearing, so no shared object is changed.
+        result = Merge(result, new KindDto());
+        if (fixedTrophies) result.Kills = null;
+        if (fixedUpgrade && result.Upgrade != null)
+        {
+            result.Upgrade = MergeUpgrade(result.Upgrade, new UpgradeDto());
+            result.Upgrade!.Kills = null;
+        }
+        return result;
+    }
+
     private static KindDto Merge(KindDto under, KindDto? over)
     {
         if (over == null) return under;
@@ -261,6 +281,7 @@ internal static class BannerYaml
             Station = string.IsNullOrWhiteSpace(over.Station) ? under.Station : over.Station,
             StationLevel = over.StationLevel ?? under.StationLevel,
             Trophies = over.Trophies ?? under.Trophies,
+            Kills = over.Kills ?? under.Kills,
             Extra = over.Extra ?? under.Extra,
             SourcePrefab = string.IsNullOrWhiteSpace(over.SourcePrefab) ? under.SourcePrefab : over.SourcePrefab,
             TrophyMount = MergeMount(under.TrophyMount, over.TrophyMount),
@@ -273,6 +294,7 @@ internal static class BannerYaml
     {
         if (over == null) return under;
         if (under == null) return over;
+        // Always a new object from here on.
         return new UpgradeDto
         {
             MaxLevel = over.MaxLevel ?? under.MaxLevel,
@@ -280,6 +302,7 @@ internal static class BannerYaml
             DamageReduction = over.DamageReduction ?? under.DamageReduction,
             Radius = over.Radius ?? under.Radius,
             Trophies = over.Trophies ?? under.Trophies,
+            Kills = over.Kills ?? under.Kills,
             Extra = over.Extra ?? under.Extra,
         };
     }
@@ -359,6 +382,8 @@ internal static class BannerYaml
         values.LevelDamageReduction = Math.Max(0f, upgrade.DamageReduction ?? 0f);
         values.LevelRadius = Math.Max(0f, upgrade.Radius ?? 0f);
         values.UpgradeTrophies = Math.Max(0, upgrade.Trophies ?? 0);
+        values.Kills = dto.Kills is > 0f ? dto.Kills : null;
+        values.UpgradeKills = upgrade.Kills is > 0f ? upgrade.Kills : null;
         // Upgrade materials default to the kind's own extra materials (so the biome's apply).
         values.UpgradeExtra = upgrade.Extra != null ? ToCosts(upgrade.Extra, where, "upgrade.extra") : new List<ExtraCost>(values.Extra);
 
@@ -397,17 +422,17 @@ internal static class BannerYaml
     {
         public KindDto? Permanent { get; set; }
         public KindDto? Portable { get; set; }
-        public Dictionary<string, RarityDto?>? Rarity { get; set; }
+        public Dictionary<string, AvailabilityDto?>? Availability { get; set; }
         public Dictionary<string, BiomeDto?>? Biomes { get; set; }
     }
 
-    /// <summary>Trophy counts for a rarity bucket.</summary>
-    private sealed class RarityDto
+    /// <summary>Kill targets for an availability tier (how easy the creature is to find and kill).</summary>
+    private sealed class AvailabilityDto
     {
-        public int? Permanent { get; set; }
-        public int? Portable { get; set; }
-        /// <summary>Trophies per upgrade step, both kinds.</summary>
-        public int? Upgrade { get; set; }
+        public float? Permanent { get; set; }
+        public float? Portable { get; set; }
+        /// <summary>Kills per upgrade step (x1), both kinds.</summary>
+        public float? Upgrade { get; set; }
     }
 
     private sealed class UpgradeDto
@@ -417,6 +442,7 @@ internal static class BannerYaml
         public float? DamageReduction { get; set; }
         public float? Radius { get; set; }
         public int? Trophies { get; set; }
+        public float? Kills { get; set; }
         public List<CostDto?>? Extra { get; set; }
     }
 
@@ -436,6 +462,8 @@ internal static class BannerYaml
         public string? Trophy { get; set; }
         public string? Tint { get; set; }
         public string? Biome { get; set; }
+        public string? Availability { get; set; }
+        /// <summary>Replaced by Availability; read only to warn.</summary>
         public string? Rarity { get; set; }
         public string? RequiresMod { get; set; }
         public bool? Enabled { get; set; }
@@ -453,6 +481,8 @@ internal static class BannerYaml
         public string? Station { get; set; }
         public int? StationLevel { get; set; }
         public int? Trophies { get; set; }
+        /// <summary>Kill target: trophies = kills x the creature's drop chance (rounded, at least 1).</summary>
+        public float? Kills { get; set; }
         public List<CostDto?>? Extra { get; set; }
         public string? SourcePrefab { get; set; }
         public MountDto? TrophyMount { get; set; }

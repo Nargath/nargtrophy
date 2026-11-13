@@ -6,12 +6,12 @@
 #
 # Each banner is built in layers, weakest first:
 #   built-in values < defaults.permanent / defaults.portable < defaults.biomes.<biome> < the entry itself
-# and `rarity` sets the trophy count (unless the entry gives `trophies` itself).
-# A modded creature usually needs only: id, creature, trophy, biome, rarity.
+# and `availability` sets kill targets; the trophy cost comes from them and the creature's real drop chance.
+# A modded creature usually needs only: id, creature, trophy, biome, availability.
 #
 # Bosses are left out on purpose: their trophies have vanilla uses (Forsaken powers).
 # Also left out: unique or quest creatures with a guaranteed trophy (Hildir's bosses, Kvastur, White Deer).
-# Rarities match vanilla drop chances, checked with `nt_trophies` (2026-11-13). Biomes marked "unverified"
+# Availability tiers are a first balance pass (2026-11-13, docs/09_Balance.md). Biomes marked "unverified"
 # are guesses. All numbers are placeholders until the balance pass.
 #
 # alsoMatches lists technical copies of the SAME creature (same name and trophy): sleeping, frozen,
@@ -38,7 +38,7 @@ defaults:
     # size = longest side in metres; offset and rotation ([x, y, z], metres and degrees) adjust the automatic placement. Startup only.
     trophyMount: { enabled: true, size: 0.9, offset: [0, 0, 0], rotation: [0, 0, 0] }
     # Upgrades: hover a built trophy banner and press E to pay for the next level. Each level adds these.
-    # Cost per level = 'trophies' (set by rarity below) + the banner's extra materials, times x1, x2, x4 for
+    # Cost per level = trophies (from the availability kill targets below) + the banner's extra materials, times x1, x2, x4 for
     # levels 2, 3, 4 (vanilla's item upgrade formula). Deconstructing refunds everything spent on upgrades.
     upgrade: { maxLevel: 3, damageBonus: 0.05, damageReduction: 0.03, radius: 3 }
   portable:                # war standard: reusable item that plants a banner for a while
@@ -55,13 +55,17 @@ defaults:
     # level). Same cost formula as above. Only damage, reduction and radius improve; duration and cooldown don't.
     upgrade: { maxLevel: 3, damageBonus: 0.05, damageReduction: 0.03, radius: 2 }
 
-  # Trophy counts by how often the trophy drops (docs/02):
-  #   common = 25% or more, uncommon = 10-24%, rare = under 10%.
-  # 'upgrade' = trophies per upgrade step, both kinds (times x1, x2, x4 for levels 2, 3, 4).
-  rarity:
-    common:   { permanent: 12, portable: 15, upgrade: 6 }
-    uncommon: { permanent: 8,  portable: 10, upgrade: 4 }
-    rare:     { permanent: 4,  portable: 5,  upgrade: 2 }
+  # Availability = how easy a creature is to find and kill (spawn rate, nests and villages, difficulty), set by
+  # hand per creature. Each tier is a KILL target; the mod reads the creature's real trophy drop chance and works
+  # out the trophy cost: trophies = kills x drop chance, rounded, at least 1 (docs/09_Balance.md).
+  #   permanent = kills for a trophy banner, portable = for a war standard,
+  #   upgrade = kills per upgrade step (x1, x2, x4 for levels 2, 3, 4), both kinds.
+  # An entry can still set  permanent: { trophies: N }  (or portable / upgrade) to fix its own count.
+  availability:
+    abundant: { permanent: 20, portable: 25, upgrade: 10 }   # everywhere: Greydwarf, Deer, Fuling, Seeker
+    common:   { permanent: 12, portable: 15, upgrade: 6 }    # met often: Draugr, Wolf, Lox
+    scarce:   { permanent: 6,  portable: 8,  upgrade: 3 }    # few or hard: Troll, Stone Golem, Abomination
+    rare:     { permanent: 3,  portable: 4,  upgrade: 2 }    # rarely met: Serpent, Bonemaw
 
   # Per biome: extra materials on top of the trophies, and a cloth colour used when an entry has no tint.
   biomes:
@@ -103,9 +107,9 @@ defaults:
 
 banners:
   # ---- Meadows ----
-  - { id: Boar,  creature: Boar, trophy: TrophyBoar, biome: Meadows, rarity: uncommon, tint: "#8a5a3c" }
-  - { id: Deer,  creature: Deer, trophy: TrophyDeer, biome: Meadows, rarity: common,   tint: "#a07a4a" }
-  - { id: Neck,  creature: Neck, trophy: TrophyNeck, biome: Meadows, rarity: rare,     tint: "#5e7f8c" }
+  - { id: Boar,  creature: Boar, trophy: TrophyBoar, biome: Meadows, availability: abundant, tint: "#8a5a3c" }
+  - { id: Deer,  creature: Deer, trophy: TrophyDeer, biome: Meadows, availability: abundant,   tint: "#a07a4a" }
+  - { id: Neck,  creature: Neck, trophy: TrophyNeck, biome: Meadows, availability: abundant,     tint: "#5e7f8c" }
 
   # ---- Black Forest ----
   - id: Greydwarf
@@ -113,15 +117,15 @@ banners:
     alsoMatches: [ Greydwarf_Frozen ]
     trophy: TrophyGreydwarf
     biome: BlackForest
-    rarity: rare
+    availability: abundant
     tint: "#4a6b3a"
-  - { id: GreydwarfBrute, creature: Greydwarf_Elite, trophy: TrophyGreydwarfBrute, biome: BlackForest, rarity: uncommon, tint: "#3b5530" }
+  - { id: GreydwarfBrute, creature: Greydwarf_Elite, trophy: TrophyGreydwarfBrute, biome: BlackForest, availability: common, tint: "#3b5530" }
   - id: GreydwarfShaman
     creature: Greydwarf_Shaman
     alsoMatches: [ Greydwarf_Shaman_Frozen ]
     trophy: TrophyGreydwarfShaman
     biome: BlackForest
-    rarity: uncommon
+    availability: common
     tint: "#5c7a2e"
   - id: Skeleton
     creature: Skeleton
@@ -129,12 +133,12 @@ banners:
                    Skeleton_Mountains, Skeleton_Mountains_noarcher, Skeleton_Swamps, Skeleton_Swamps_noarcher ]
     trophy: TrophySkeleton
     biome: BlackForest
-    rarity: uncommon
+    availability: common
     tint: "#d8d2c0"
-  - { id: RancidRemains, creature: Skeleton_Poison, trophy: TrophySkeletonPoison, biome: BlackForest, rarity: uncommon, tint: "#7d8a4a" }
-  - { id: Ghost, creature: Ghost, alsoMatches: [ Ghost_sleeping ], trophy: TrophyGhost, biome: BlackForest, rarity: uncommon, tint: "#b8c4c8" }
-  - { id: Troll, creature: Troll, alsoMatches: [ Troll_sleeping ], trophy: TrophyFrostTroll, biome: BlackForest, rarity: common, tint: "#4a6a8a" }
-  - { id: Bjorn, creature: Bjorn, alsoMatches: [ Bjorn_sleeping ], trophy: TrophyBjorn, biome: BlackForest, rarity: uncommon, tint: "#6b4a2e" }
+  - { id: RancidRemains, creature: Skeleton_Poison, trophy: TrophySkeletonPoison, biome: BlackForest, availability: scarce, tint: "#7d8a4a" }
+  - { id: Ghost, creature: Ghost, alsoMatches: [ Ghost_sleeping ], trophy: TrophyGhost, biome: BlackForest, availability: scarce, tint: "#b8c4c8" }
+  - { id: Troll, creature: Troll, alsoMatches: [ Troll_sleeping ], trophy: TrophyFrostTroll, biome: BlackForest, availability: scarce, tint: "#4a6a8a" }
+  - { id: Bjorn, creature: Bjorn, alsoMatches: [ Bjorn_sleeping ], trophy: TrophyBjorn, biome: BlackForest, availability: scarce, tint: "#6b4a2e" }
 
   # ---- Swamp ----
   - id: Draugr
@@ -142,76 +146,76 @@ banners:
     alsoMatches: [ Draugr_Ranged, Draugr_sleeping, Draugr_Ranged_sleeping ]
     trophy: TrophyDraugr
     biome: Swamp
-    rarity: uncommon
+    availability: common
     tint: "#5a6b5a"
-  - { id: DraugrElite, creature: Draugr_Elite, alsoMatches: [ Draugr_Elite_sleeping ], trophy: TrophyDraugrElite, biome: Swamp, rarity: uncommon, tint: "#3e4a3e" }
-  - { id: Blob,        creature: Blob,        alsoMatches: [ BlobAspect ], trophy: TrophyBlob, biome: Swamp, rarity: uncommon, tint: "#6b8a3a" }
-  - { id: Oozer,       creature: BlobElite,   trophy: TrophyBlob,         biome: Swamp, rarity: uncommon, tint: "#4e6e2a" }  # drops the Blob trophy
-  - { id: Leech,       creature: Leech,       alsoMatches: [ Leech_cave ], trophy: TrophyLeech, biome: Swamp, rarity: uncommon, tint: "#3a3a4a" }
-  - { id: Surtling,    creature: Surtling,    trophy: TrophySurtling,     biome: Swamp, rarity: rare,     tint: "#c4501e" }
-  - { id: Wraith,      creature: Wraith,      trophy: TrophyWraith,       biome: Swamp, rarity: rare,     tint: "#2e2e3a" }
-  - { id: Abomination, creature: Abomination, trophy: TrophyAbomination,  biome: Swamp, rarity: common,   tint: "#4f5a2e" }
+  - { id: DraugrElite, creature: Draugr_Elite, alsoMatches: [ Draugr_Elite_sleeping ], trophy: TrophyDraugrElite, biome: Swamp, availability: scarce, tint: "#3e4a3e" }
+  - { id: Blob,        creature: Blob,        alsoMatches: [ BlobAspect ], trophy: TrophyBlob, biome: Swamp, availability: common, tint: "#6b8a3a" }
+  - { id: Oozer,       creature: BlobElite,   trophy: TrophyBlob,         biome: Swamp, availability: scarce, tint: "#4e6e2a" }  # drops the Blob trophy
+  - { id: Leech,       creature: Leech,       alsoMatches: [ Leech_cave ], trophy: TrophyLeech, biome: Swamp, availability: common, tint: "#3a3a4a" }
+  - { id: Surtling,    creature: Surtling,    trophy: TrophySurtling,     biome: Swamp, availability: common,     tint: "#c4501e" }
+  - { id: Wraith,      creature: Wraith,      trophy: TrophyWraith,       biome: Swamp, availability: scarce,     tint: "#2e2e3a" }
+  - { id: Abomination, creature: Abomination, trophy: TrophyAbomination,  biome: Swamp, availability: scarce,   tint: "#4f5a2e" }
 
   # ---- Mountain ----
-  - { id: Wolf,       creature: Wolf,            trophy: TrophyWolf,      biome: Mountain, rarity: uncommon, tint: "#8a8f99" }
-  - { id: Drake,      creature: Hatchling,       trophy: TrophyHatchling, biome: Mountain, rarity: uncommon, tint: "#a9c6dc" }
-  - { id: StoneGolem, creature: StoneGolem,      trophy: TrophySGolem,    biome: Mountain, rarity: rare,     tint: "#6e6e6e" }
-  - { id: Fenring,    creature: Fenring,         trophy: TrophyFenring,   biome: Mountain, rarity: uncommon, tint: "#4b4f6b" }
-  - { id: Cultist,    creature: Fenring_Cultist, trophy: TrophyCultist,   biome: Mountain, rarity: uncommon, tint: "#6a2e3a" }
-  - { id: Ulv,        creature: Ulv,             trophy: TrophyUlv,       biome: Mountain, rarity: uncommon, tint: "#3c4252" }
+  - { id: Wolf,       creature: Wolf,            trophy: TrophyWolf,      biome: Mountain, availability: common, tint: "#8a8f99" }
+  - { id: Drake,      creature: Hatchling,       trophy: TrophyHatchling, biome: Mountain, availability: common, tint: "#a9c6dc" }
+  - { id: StoneGolem, creature: StoneGolem,      trophy: TrophySGolem,    biome: Mountain, availability: scarce,     tint: "#6e6e6e" }
+  - { id: Fenring,    creature: Fenring,         trophy: TrophyFenring,   biome: Mountain, availability: scarce, tint: "#4b4f6b" }
+  - { id: Cultist,    creature: Fenring_Cultist, trophy: TrophyCultist,   biome: Mountain, availability: scarce, tint: "#6a2e3a" }
+  - { id: Ulv,        creature: Ulv,             trophy: TrophyUlv,       biome: Mountain, availability: scarce, tint: "#3c4252" }
 
   # ---- Plains ----
-  - { id: Deathsquito,     creature: Deathsquito,  trophy: TrophyDeathsquito,  biome: Plains, rarity: rare,     tint: "#6a5a2e" }
-  - { id: Fuling,          creature: Goblin,       alsoMatches: [ GoblinArcher ], trophy: TrophyGoblin, biome: Plains, rarity: uncommon, tint: "#8a6a3a" }
-  - { id: FulingBerserker, creature: GoblinBrute,  trophy: TrophyGoblinBrute,  biome: Plains, rarity: rare,     tint: "#6a3a2a" }
-  - { id: FulingShaman,    creature: GoblinShaman, trophy: TrophyGoblinShaman, biome: Plains, rarity: uncommon, tint: "#7a5a8a" }
-  - { id: Lox,             creature: Lox,          trophy: TrophyLox,          biome: Plains, rarity: uncommon, tint: "#7a5a3a" }
-  - { id: Growth,          creature: BlobTar,      trophy: TrophyGrowth,       biome: Plains, rarity: uncommon, tint: "#2a2a2a" }
-  - { id: Vile,            creature: Unbjorn,      trophy: TrophyBjornUndead,  biome: Plains, rarity: uncommon, tint: "#4a3a4a" }
+  - { id: Deathsquito,     creature: Deathsquito,  trophy: TrophyDeathsquito,  biome: Plains, availability: abundant,     tint: "#6a5a2e" }
+  - { id: Fuling,          creature: Goblin,       alsoMatches: [ GoblinArcher ], trophy: TrophyGoblin, biome: Plains, availability: abundant, tint: "#8a6a3a" }
+  - { id: FulingBerserker, creature: GoblinBrute,  trophy: TrophyGoblinBrute,  biome: Plains, availability: scarce,     tint: "#6a3a2a" }
+  - { id: FulingShaman,    creature: GoblinShaman, trophy: TrophyGoblinShaman, biome: Plains, availability: common, tint: "#7a5a8a" }
+  - { id: Lox,             creature: Lox,          trophy: TrophyLox,          biome: Plains, availability: common, tint: "#7a5a3a" }
+  - { id: Growth,          creature: BlobTar,      trophy: TrophyGrowth,       biome: Plains, availability: common, tint: "#2a2a2a" }
+  - { id: Vile,            creature: Unbjorn,      trophy: TrophyBjornUndead,  biome: Plains, availability: scarce, tint: "#4a3a4a" }
 
   # ---- Mistlands ----
-  - { id: Seeker,        creature: Seeker,      trophy: TrophySeeker,      biome: Mistlands, rarity: rare,   tint: "#4a3a6a" }
-  - { id: SeekerSoldier, creature: SeekerBrute, trophy: TrophySeekerBrute, biome: Mistlands, rarity: rare,   tint: "#5a3a5a" }
-  - { id: Gjall,         creature: Gjall,       trophy: TrophyGjall,       biome: Mistlands, rarity: common, tint: "#8a5a3a" }
-  - { id: Tick,          creature: Tick,        trophy: TrophyTick,        biome: Mistlands, rarity: rare,   tint: "#6a2a2a" }
+  - { id: Seeker,        creature: Seeker,      trophy: TrophySeeker,      biome: Mistlands, availability: abundant,   tint: "#4a3a6a" }
+  - { id: SeekerSoldier, creature: SeekerBrute, trophy: TrophySeekerBrute, biome: Mistlands, availability: common,   tint: "#5a3a5a" }
+  - { id: Gjall,         creature: Gjall,       trophy: TrophyGjall,       biome: Mistlands, availability: scarce, tint: "#8a5a3a" }
+  - { id: Tick,          creature: Tick,        trophy: TrophyTick,        biome: Mistlands, availability: common,   tint: "#6a2a2a" }
   - id: Dvergr                     # Dvergr Rogue
     creature: Dverger
     alsoMatches: [ DvergerAshlands ]
     trophy: TrophyDvergr
     biome: Mistlands
-    rarity: rare
+    availability: scarce
     tint: "#3a5a8a"
   - id: DvergrMage                 # the four mage loadouts all show as "Dvergr Mage"
     creature: DvergerMage
     alsoMatches: [ DvergerMageFire, DvergerMageIce, DvergerMageSupport ]
     trophy: TrophyDvergr
     biome: Mistlands
-    rarity: rare
+    availability: scarce
     tint: "#2e4a7a"
-  - { id: Hare,          creature: Hare,        trophy: TrophyHare,        biome: Mistlands, rarity: rare,   tint: "#b0a890" }
+  - { id: Hare,          creature: Hare,        trophy: TrophyHare,        biome: Mistlands, availability: common,   tint: "#b0a890" }
 
   # ---- Ashlands ----
-  - { id: CharredWarrior,  creature: Charred_Melee,  trophy: TrophyCharredMelee,   biome: Ashlands, rarity: rare,     tint: "#3a2a2a" }
-  - { id: CharredMarksman, creature: Charred_Archer, trophy: TrophyCharredArcher,  biome: Ashlands, rarity: rare,     tint: "#4a2e24" }
-  - { id: CharredWarlock,  creature: Charred_Mage,   trophy: TrophyCharredMage,    biome: Ashlands, rarity: rare,     tint: "#5a1e2e" }
-  - { id: Morgen,          creature: Morgen,         alsoMatches: [ Morgen_NonSleeping ], trophy: TrophyMorgen, biome: Ashlands, rarity: rare, tint: "#6a3a2a" }
-  - { id: FallenValkyrie,  creature: FallenValkyrie, trophy: TrophyFallenValkyrie, biome: Ashlands, rarity: rare,     tint: "#8a7a5a" }
-  - { id: Asksvin,         creature: Asksvin,        trophy: TrophyAsksvin,        biome: Ashlands, rarity: uncommon, tint: "#5a6a3a" }
-  - { id: Volture,         creature: Volture,        trophy: TrophyVolture,        biome: Ashlands, rarity: uncommon, tint: "#4a3a3a" }
-  - { id: Bonemaw,         creature: BonemawSerpent, trophy: TrophyBonemawSerpent, biome: Ashlands, rarity: common,   tint: "#8a8a7a" }
-  - { id: LavaBlob,        creature: BlobLava,       trophy: TrophyBlob_Lava,      biome: Ashlands, rarity: uncommon, tint: "#c43a1e" }
+  - { id: CharredWarrior,  creature: Charred_Melee,  trophy: TrophyCharredMelee,   biome: Ashlands, availability: abundant,     tint: "#3a2a2a" }
+  - { id: CharredMarksman, creature: Charred_Archer, trophy: TrophyCharredArcher,  biome: Ashlands, availability: common,     tint: "#4a2e24" }
+  - { id: CharredWarlock,  creature: Charred_Mage,   trophy: TrophyCharredMage,    biome: Ashlands, availability: common,     tint: "#5a1e2e" }
+  - { id: Morgen,          creature: Morgen,         alsoMatches: [ Morgen_NonSleeping ], trophy: TrophyMorgen, biome: Ashlands, availability: scarce, tint: "#6a3a2a" }
+  - { id: FallenValkyrie,  creature: FallenValkyrie, trophy: TrophyFallenValkyrie, biome: Ashlands, availability: scarce,     tint: "#8a7a5a" }
+  - { id: Asksvin,         creature: Asksvin,        trophy: TrophyAsksvin,        biome: Ashlands, availability: common, tint: "#5a6a3a" }
+  - { id: Volture,         creature: Volture,        trophy: TrophyVolture,        biome: Ashlands, availability: common, tint: "#4a3a3a" }
+  - { id: Bonemaw,         creature: BonemawSerpent, trophy: TrophyBonemawSerpent, biome: Ashlands, availability: rare,   tint: "#8a8a7a" }
+  - { id: LavaBlob,        creature: BlobLava,       trophy: TrophyBlob_Lava,      biome: Ashlands, availability: common, tint: "#c43a1e" }
 
   # ---- Deep North (biomes unverified: new to the game) ----
-  - { id: Barka,         creature: Barka,        trophy: TrophyBarka,          biome: DeepNorth, rarity: uncommon, tint: "#8a7a6a" }
-  - { id: FrostBlob,     creature: BlobFrost,    trophy: TrophyBlob_Frost,     biome: DeepNorth, rarity: uncommon, tint: "#a8d0e8" }
-  - { id: ShapelessPulp, creature: BlobMork,     trophy: TrophyBlob_Morkhalla, biome: DeepNorth, rarity: uncommon, tint: "#5a4a6a" }
-  - { id: Elaking,       creature: Elaking,      alsoMatches: [ ElakingLantern ], trophy: TrophyElaking, biome: DeepNorth, rarity: uncommon, tint: "#6a7a8a" }
-  - { id: EyelessOne,    creature: ElakingMole,  trophy: TrophyMole,           biome: DeepNorth, rarity: uncommon, tint: "#7a6a5a" }
-  - { id: Krigen,        creature: JotunWarrior, alsoMatches: [ JotunWarriorDualWield ], trophy: TrophyJotunWarrior, biome: DeepNorth, rarity: uncommon, tint: "#4a5a7a" }
-  - { id: Hexen,         creature: JotunWitch,   trophy: TrophyJotunWitch,     biome: DeepNorth, rarity: uncommon, tint: "#5a4a7a" }
-  - { id: Moose,         creature: Moose,        trophy: TrophyMoose,          biome: DeepNorth, rarity: uncommon, tint: "#7a5a3a" }
-  - { id: Seal,          creature: Seal,         trophy: TrophySeal,           biome: DeepNorth, rarity: uncommon, tint: "#8a9aa8" }
-  - { id: Writhan,       creature: Writhan,      trophy: TrophyWrithan,        biome: DeepNorth, rarity: uncommon, tint: "#3a4a5a" }
+  - { id: Barka,         creature: Barka,        trophy: TrophyBarka,          biome: DeepNorth, availability: common, tint: "#8a7a6a" }
+  - { id: FrostBlob,     creature: BlobFrost,    trophy: TrophyBlob_Frost,     biome: DeepNorth, availability: common, tint: "#a8d0e8" }
+  - { id: ShapelessPulp, creature: BlobMork,     trophy: TrophyBlob_Morkhalla, biome: DeepNorth, availability: common, tint: "#5a4a6a" }
+  - { id: Elaking,       creature: Elaking,      alsoMatches: [ ElakingLantern ], trophy: TrophyElaking, biome: DeepNorth, availability: common, tint: "#6a7a8a" }
+  - { id: EyelessOne,    creature: ElakingMole,  trophy: TrophyMole,           biome: DeepNorth, availability: common, tint: "#7a6a5a" }
+  - { id: Krigen,        creature: JotunWarrior, alsoMatches: [ JotunWarriorDualWield ], trophy: TrophyJotunWarrior, biome: DeepNorth, availability: common, tint: "#4a5a7a" }
+  - { id: Hexen,         creature: JotunWitch,   trophy: TrophyJotunWitch,     biome: DeepNorth, availability: common, tint: "#5a4a7a" }
+  - { id: Moose,         creature: Moose,        trophy: TrophyMoose,          biome: DeepNorth, availability: common, tint: "#7a5a3a" }
+  - { id: Seal,          creature: Seal,         trophy: TrophySeal,           biome: DeepNorth, availability: common, tint: "#8a9aa8" }
+  - { id: Writhan,       creature: Writhan,      trophy: TrophyWrithan,        biome: DeepNorth, availability: common, tint: "#3a4a5a" }
 
   # ---- Ocean ----
-  - { id: Serpent, creature: Serpent, trophy: TrophySerpent, biome: Ocean, rarity: common, tint: "#2f4f6a" }
+  - { id: Serpent, creature: Serpent, trophy: TrophySerpent, biome: Ocean, availability: rare, tint: "#2f4f6a" }

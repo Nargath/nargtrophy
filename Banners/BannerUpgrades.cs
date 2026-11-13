@@ -10,7 +10,7 @@ namespace NargTrophy.Banners;
 
 /// <summary>
 /// Upgrades (phase 5, agreed 2026-11-13): 3 levels on top of the base; damage bonus, damage reduction and
-/// radius only; each level costs trophies (by rarity) plus the biome material, with vanilla's quality cost
+/// radius only; each level costs trophies (from the availability kill targets and the real drop chance) plus the biome material, with vanilla's quality cost
 /// multiplier (x1, x2, x4).
 ///
 /// - War standard: vanilla item quality, upgraded at its crafting station (the recipe carries the per-level
@@ -47,7 +47,7 @@ internal static class BannerUpgrades
         if (level >= values.TopLevel) return "$nt_msg_max_level";
         if (!PrivateArea.CheckAccess(nview.transform.position)) return "$msg_privatezone";
 
-        List<ExtraCost> cost = values.UpgradeCost(def.Trophy, level + 1);
+        List<ExtraCost> cost = values.UpgradeCost(def.Trophy, level + 1, def.DropChance);
         bool free = player.NoCostCheat();
         if (!free)
         {

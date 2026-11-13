@@ -96,6 +96,7 @@ internal static class BannerPieces
             }
             if (!TryResolve(def, out ItemDrop trophy, out Character creature)) continue;
             WarnUnknownCosts(def);
+            ReadDropChance(def, warn: true);
 
             def.CreatureName = string.IsNullOrEmpty(creature.m_name) ? def.Creature : creature.m_name;
             Sprite? trophyIcon = trophy.m_itemData.m_shared.m_icons is { Length: > 0 } icons ? icons[0] : null;
@@ -141,6 +142,27 @@ internal static class BannerPieces
                 Plugin.Log.LogWarning($"Banner '{def.Id}': alsoMatches creature '{extra}' not found. Kept, in case it registers later.");
         }
         return true;
+    }
+
+    /// <summary>
+    /// The creature's chance to drop this banner's trophy, from its drop list (the highest if listed more than
+    /// once). Costs set by kill targets need it; if the creature doesn't drop the trophy, they fall back to the
+    /// fixed trophy counts.
+    /// </summary>
+    public static void ReadDropChance(BannerDefinition def, bool warn)
+    {
+        GameObject? prefab = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(def.Creature) : null;
+        if (prefab == null) prefab = PrefabManager.Instance.GetPrefab(def.Creature);
+        float chance = 0f;
+        if (prefab != null && prefab.TryGetComponent(out CharacterDrop drops) && drops.m_drops != null)
+        {
+            foreach (CharacterDrop.Drop drop in drops.m_drops)
+                if (drop?.m_prefab != null && drop.m_prefab.name == def.Trophy) chance = Mathf.Max(chance, drop.m_chance);
+        }
+        if (chance <= 0f && warn && (def.Permanent.Kills != null || def.Portable.Kills != null))
+            Plugin.Log.LogWarning($"Banner '{def.Id}': creature '{def.Creature}' doesn't drop '{def.Trophy}', so its cost can't " +
+                                  "come from a kill target. Using the fixed trophy counts instead.");
+        def.DropChance = chance;
     }
 
     /// <summary>Unknown extra cost items are dropped from the cost when it's applied; say so once, at startup.</summary>
@@ -334,7 +356,7 @@ internal static class BannerPieces
 
     private static RequirementConfig[] PieceCosts(BannerDefinition def, BannerValues values)
     {
-        var costs = new List<RequirementConfig> { new(def.Trophy, values.Trophies, 0, true) };
+        var costs = new List<RequirementConfig> { new(def.Trophy, values.TrophyCost(def.DropChance), 0, true) };
         foreach (ExtraCost extra in values.Extra) costs.Add(new RequirementConfig(extra.Item, extra.Amount, 0, true));
         return costs.ToArray();
     }
@@ -345,7 +367,8 @@ internal static class BannerPieces
     /// </summary>
     private static RequirementConfig[] RecipeCosts(BannerDefinition def, BannerValues values)
     {
-        var amounts = new List<(string item, int craft, int perLevel)> { (def.Trophy, values.Trophies, values.UpgradeTrophies) };
+        var amounts = new List<(string item, int craft, int perLevel)>
+            { (def.Trophy, values.TrophyCost(def.DropChance), values.UpgradeStep(def.DropChance)) };
         void Add(string item, int craft, int perLevel)
         {
             int i = amounts.FindIndex(a => a.item == item);
@@ -363,6 +386,10 @@ internal static class BannerPieces
     private static void RefreshCosts()
     {
         if (ObjectDB.instance == null || ZNetScene.instance == null) return;
+        // Costs from kill targets depend on the real drop chance; read it again here, in a world, so drop-rate
+        // mods that change drops at world load are counted.
+        foreach (BannerDefinition def in BannerRegistry.All)
+            if (def.Registered) ReadDropChance(def, warn: false);
         foreach ((Piece piece, BannerDefinition def) in Built)
         {
             if (piece == null) continue;

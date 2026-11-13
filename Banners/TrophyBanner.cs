@@ -183,7 +183,7 @@ public class TrophyBanner : MonoBehaviour, Hoverable, Interactable
             if (values.Level >= kind.TopLevel)
                 text.Append("\n$nt_hover_max_level");
             else
-                text.Append($"\n[<color=yellow><b>$KEY_Use</b></color>] $nt_hover_upgrade: {BannerUpgrades.Describe(kind.UpgradeCost(def.Trophy, values.Level + 1))}");
+                text.Append($"\n[<color=yellow><b>$KEY_Use</b></color>] $nt_hover_upgrade: {BannerUpgrades.Describe(kind.UpgradeCost(def.Trophy, values.Level + 1, def.DropChance))}");
         }
 
         if (Kind == BannerKind.Portable)

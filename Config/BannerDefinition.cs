@@ -54,6 +54,20 @@ internal sealed class BannerValues
     public int UpgradeTrophies;
     public List<ExtraCost> UpgradeExtra = new();
 
+    // Balance (agreed 2026-11-13): kill targets from the availability tier. When set (and the drop chance is
+    // known) they replace Trophies / UpgradeTrophies: trophies = kills x drop chance, rounded, at least 1.
+    public float? Kills;
+    public float? UpgradeKills;
+
+    /// <summary>Trophies to build or craft, at this drop chance.</summary>
+    public int TrophyCost(float dropChance) => FromKills(Kills, dropChance) ?? Trophies;
+
+    /// <summary>Trophies per upgrade step (x1), at this drop chance.</summary>
+    public int UpgradeStep(float dropChance) => FromKills(UpgradeKills, dropChance) ?? UpgradeTrophies;
+
+    private static int? FromKills(float? kills, float dropChance) =>
+        kills is float k && dropChance > 0f ? Math.Max(1, (int)Math.Round(k * dropChance, MidpointRounding.AwayFromZero)) : null;
+
     /// <summary>Highest level (base + upgrades).</summary>
     public int TopLevel => 1 + MaxLevel;
 
@@ -76,11 +90,12 @@ internal sealed class BannerValues
         targetLevel <= 1 ? 0f : targetLevel >= 4 ? 4f + (targetLevel - 4) / 2f : targetLevel - 1;
 
     /// <summary>Items needed to go from targetLevel - 1 to targetLevel (prefab name, amount).</summary>
-    public List<ExtraCost> UpgradeCost(string trophy, int targetLevel)
+    public List<ExtraCost> UpgradeCost(string trophy, int targetLevel, float dropChance)
     {
         float multiplier = UpgradeMultiplier(targetLevel);
         var cost = new List<ExtraCost>();
-        if (UpgradeTrophies > 0) cost.Add(new ExtraCost(trophy, (int)Math.Floor(UpgradeTrophies * multiplier)));
+        int step = UpgradeStep(dropChance);
+        if (step > 0) cost.Add(new ExtraCost(trophy, (int)Math.Floor(step * multiplier)));
         foreach (ExtraCost extra in UpgradeExtra) cost.Add(new ExtraCost(extra.Item, (int)Math.Floor(extra.Amount * multiplier)));
         cost.RemoveAll(c => c.Amount <= 0);
         return cost;
@@ -116,9 +131,15 @@ internal sealed class BannerDefinition
     public string Trophy = "";
     public Color? Tint;
 
-    /// <summary>Optional labels from the file. Biome picks extra costs and a fallback tint; rarity picks trophy counts.</summary>
+    /// <summary>Optional labels from the file. Biome picks extra costs and a fallback tint; availability picks kill targets.</summary>
     public string Biome = "";
-    public string Rarity = "";
+    public string Availability = "";
+
+    /// <summary>
+    /// The creature's real chance to drop this banner's trophy (0 = unknown), read from the game when costs are
+    /// worked out, so drop-rate mods count. Costs set by kill targets use it.
+    /// </summary>
+    public float DropChance;
 
     /// <summary>Plugin GUID this banner needs. Checked when banners are built: if that mod isn't loaded, the banner is skipped quietly.</summary>
     public string RequiresMod = "";

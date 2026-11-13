@@ -45,7 +45,7 @@ internal static class DamagePatches
     {
         if (hit == null || __instance != Player.m_localPlayer) return;
         if (__instance.m_nview == null || !__instance.m_nview.IsOwner()) return;
-        if (!hit.HaveAttacker()) return; // known gap: hits with no recorded attacker (Open, docs/04_Technical.md)
+        if (!hit.HaveAttacker()) return; // no recorded attacker (AoE clouds, environment): out of scope (docs/04)
 
         Character attacker = hit.GetAttacker();
         if (attacker == null || attacker.IsPlayer()) return; // never PvP

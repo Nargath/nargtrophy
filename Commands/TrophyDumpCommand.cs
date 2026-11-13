@@ -48,6 +48,7 @@ internal sealed class TrophyDumpCommand : ConsoleCommand
             list.Add(def);
         }
 
+        Dictionary<string, List<string>> spawnHints = SpawnTableHints();
         var rows = new List<string>();
         var suggestions = new List<(string sortKey, string line)>();
         var suggested = new HashSet<string>();
@@ -63,17 +64,18 @@ internal sealed class TrophyDumpCommand : ConsoleCommand
 
                 string banner = covered.TryGetValue(prefab.name, out string id) ? id : "-";
                 string name = RichText.Replace(Localization.instance.Localize(character.m_name), "");
-                rows.Add($"{prefab.name,-24} {drop.m_prefab.name,-26} {drop.m_chance * 100f,5:0.#}%  {Bucket(drop.m_chance),-8} " +
-                         $"{(character.m_boss ? "BOSS" : ""),-4}  banner: {banner,-18} {name}");
+                string hint = Hint(prefab.name, drop, spawnHints);
+                rows.Add($"{prefab.name,-24} {drop.m_prefab.name,-26} {drop.m_chance * 100f,5:0.#}%  " +
+                         $"{(character.m_boss ? "BOSS" : ""),-4}  banner: {banner,-18} {name,-22} | {hint}");
 
                 if (banner == "-" && !character.m_boss && !BannerRegistry.NoBanner.Contains(prefab.name) && suggested.Add(prefab.name))
-                    suggestions.Add((prefab.name, Suggest(prefab.name, drop.m_prefab.name, drop.m_chance, name, character.m_name, bannersByTrophy, usedIds)));
+                    suggestions.Add((prefab.name, Suggest(prefab.name, drop.m_prefab.name, drop.m_chance, name, character.m_name, hint, bannersByTrophy, usedIds)));
             }
         }
 
         rows.Sort();
         var text = new StringBuilder();
-        text.AppendLine($"nt_trophies: {rows.Count} creature trophy drop(s). creature / trophy / chance / bucket / boss / banner / name");
+        text.AppendLine($"nt_trophies: {rows.Count} creature trophy drop(s). creature / trophy / drop chance / boss / banner / name | hints for its availability tier");
         foreach (string row in rows) text.AppendLine(row);
         Plugin.Log.LogInfo(text.ToString());
 
@@ -88,10 +90,10 @@ internal sealed class TrophyDumpCommand : ConsoleCommand
     /// One paste-ready line. Commented out (with the reason) when it's probably not wanted: a variant with the same
     /// name and trophy as an existing banner (belongs in its alsoMatches), or a guaranteed drop (unique or quest creature).
     /// </summary>
-    private static string Suggest(string prefab, string trophy, float chance, string name, string nameToken,
+    private static string Suggest(string prefab, string trophy, float chance, string name, string nameToken, string hint,
         Dictionary<string, List<BannerDefinition>> bannersByTrophy, HashSet<string> usedIds)
     {
-        string comment = $"{name}, {chance * 100f:0.#}% drop";
+        string comment = $"{name}, {chance * 100f:0.#}% drop. {hint}";
 
         if (bannersByTrophy.TryGetValue(trophy, out List<BannerDefinition> sameTrophy))
         {
@@ -101,7 +103,7 @@ internal sealed class TrophyDumpCommand : ConsoleCommand
         }
 
         string id = UniqueId(NotIdChar.Replace(prefab, ""), usedIds);
-        string line = $"  - {{ id: {id}, creature: {prefab}, trophy: {trophy}, rarity: {Bucket(chance)} }}  # {comment}";
+        string line = $"  - {{ id: {id}, creature: {prefab}, trophy: {trophy}, availability: common }}  # {comment}";
         return chance >= 1f ? $"  # guaranteed drop: unique or quest creature?\n  #{line.Substring(1)}" : line;
     }
 
@@ -124,7 +126,9 @@ internal sealed class TrophyDumpCommand : ConsoleCommand
         text.AppendLine("#");
         text.AppendLine("# For each line you keep:");
         text.AppendLine("#   - add  biome: <Meadows, BlackForest, ...>  for extra materials and a cloth colour (see banners.yml defaults);");
-        text.AppendLine("#   - check the rarity: it comes from the drop chance in this world;");
+        text.AppendLine("#   - set availability: abundant, common, scarce or rare = how easy the creature is to find and kill");
+        text.AppendLine("#     (the mod works out the trophy cost from that and the real drop chance). Suggested as 'common';");
+        text.AppendLine("#     the comment shows spawn-table hints. Creatures from nests, villages or dungeons aren't in them;");
         text.AppendLine("#   - optionally put  requiresMod: <plugin GUID>  at the top of the file, so its banners are skipped");
         text.AppendLine("#     quietly when that mod isn't installed.");
         text.AppendLine("# Restart the game after adding banners.");
@@ -148,6 +152,39 @@ internal sealed class TrophyDumpCommand : ConsoleCommand
         }
     }
 
-    /// <summary>Same thresholds as docs/02: common ≥ 25%, uncommon ≥ 10%, rare below.</summary>
-    private static string Bucket(float chance) => chance >= 0.25f ? "common" : chance >= 0.10f ? "uncommon" : "rare";
+    /// <summary>
+    /// Open-world spawns per creature, from the loaded spawn tables (vanilla, or a spawn mod's final values).
+    /// Nests, location spawners, dungeons and raids aren't in these tables.
+    /// </summary>
+    private static Dictionary<string, List<string>> SpawnTableHints()
+    {
+        var hints = new Dictionary<string, List<string>>();
+        var seen = new HashSet<SpawnSystem.SpawnData>();
+        foreach (SpawnSystem system in SpawnSystem.m_instances)
+        {
+            if (system == null) continue;
+            foreach (SpawnSystemList list in system.m_spawnLists)
+            {
+                if (list == null) continue;
+                foreach (SpawnSystem.SpawnData spawn in list.m_spawners)
+                {
+                    if (spawn?.m_prefab == null || !spawn.m_enabled || !seen.Add(spawn)) continue;
+                    string when = spawn.m_spawnAtDay && spawn.m_spawnAtNight ? "" : spawn.m_spawnAtNight ? " night" : " day";
+                    string group = spawn.m_groupSizeMax > 1 ? $" groups {spawn.m_groupSizeMin}-{spawn.m_groupSizeMax}" : "";
+                    string text = $"{spawn.m_biome} max {spawn.m_maxSpawned}, every {spawn.m_spawnInterval:0}s at {spawn.m_spawnChance:0}%{group}{when}";
+                    if (!hints.TryGetValue(spawn.m_prefab.name, out List<string> entries)) hints[spawn.m_prefab.name] = entries = new List<string>();
+                    if (!entries.Contains(text)) entries.Add(text);
+                }
+            }
+        }
+        return hints;
+    }
+
+    private static string Hint(string prefab, CharacterDrop.Drop drop, Dictionary<string, List<string>> spawnHints)
+    {
+        string spawns = spawnHints.TryGetValue(prefab, out List<string> entries)
+            ? "spawns: " + string.Join("; ", entries)
+            : "not in spawn tables (nests, locations, dungeons or events)";
+        return drop.m_levelMultiplier ? spawns + "; stars multiply trophy drops" : spawns;
+    }
 }
