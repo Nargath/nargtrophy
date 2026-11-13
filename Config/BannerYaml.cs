@@ -8,7 +8,25 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace NargTrophy.Config;
 
-/// <summary>Parses <c>banners.yml</c> into <see cref="BannerDefinition"/>s. Invalid entries are skipped with a warning.</summary>
+/// <summary>One banner file's name (for messages) and text.</summary>
+internal readonly struct BannerFile
+{
+    public readonly string Name;
+    public readonly string Text;
+
+    public BannerFile(string name, string text)
+    {
+        Name = name;
+        Text = text;
+    }
+}
+
+/// <summary>
+/// Parses the banner files into <see cref="BannerDefinition"/>s. Invalid entries are skipped with a warning.
+/// The first file is <c>banners.yml</c>: its <c>defaults</c> (kinds, rarity, biomes) apply to every file. Extra
+/// files (<c>banners.*.yml</c>, e.g. one per mod) hold <c>banners</c> and an optional file-wide
+/// <c>requiresMod</c>; a <c>defaults</c> block in them is ignored. Ids must be unique across all files.
+/// </summary>
 internal static class BannerYaml
 {
     private static readonly Regex IdPattern = new("^[A-Za-z0-9_]+$");
@@ -28,41 +46,114 @@ internal static class BannerYaml
         TrophyMount = new MountDto { Enabled = true, Size = 0.9f, Offset = new() { 0f, 0f, 0f }, Rotation = new() { 0f, 0f, 0f } },
     };
 
-    /// <summary>Parses the file text. Returns null if the YAML itself can't be read.</summary>
-    public static List<BannerDefinition>? Parse(string text, string source)
+    /// <summary>One file: banners.yml alone (kept for simple callers and tests).</summary>
+    public static List<BannerDefinition>? Parse(string text, string source) =>
+        ParseAll(new List<BannerFile> { new(source, text) }, "");
+
+    /// <summary>
+    /// Parses every file. Returns null if the main file (the first) can't be read; an unreadable extra file is
+    /// skipped with an error. <paramref name="label"/> prefixes file names in messages (e.g. "server ").
+    /// </summary>
+    public static List<BannerDefinition>? ParseAll(IReadOnlyList<BannerFile> files, string label)
     {
-        FileDto? file;
+        if (files.Count == 0) return null;
+        FileDto? main = Deserialize(files[0], label);
+        if (main == null) return null;
+
+        var result = new List<BannerDefinition>();
+        var context = new Context(main.Defaults);
+        for (int f = 0; f < files.Count; f++)
+        {
+            FileDto? file = f == 0 ? main : Deserialize(files[f], label);
+            if (file == null) continue;
+            string source = label + files[f].Name;
+            if (f > 0 && file.Defaults != null)
+                Plugin.Log.LogWarning($"{source}: 'defaults' only counts in {files[0].Name}. Ignored here.");
+            if (file.Banners == null || file.Banners.Count == 0)
+            {
+                if (f == 0) Plugin.Log.LogWarning($"{source} defines no banners.");
+                continue;
+            }
+            ParseBanners(file, source, context, result);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Every file's <c>noBanner</c> list combined: creatures deliberately left without a banner (bosses aside),
+    /// so <c>nt_trophies</c> doesn't keep suggesting them. Unreadable files are skipped quietly here (ParseAll
+    /// reports them).
+    /// </summary>
+    public static HashSet<string> ReadNoBanner(IReadOnlyList<BannerFile> files)
+    {
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        foreach (BannerFile file in files)
+        {
+            FileDto? dto;
+            try
+            {
+                dto = new DeserializerBuilder().WithNamingConvention(CamelCaseNamingConvention.Instance)
+                    .IgnoreUnmatchedProperties().Build().Deserialize<FileDto>(file.Text);
+            }
+            catch
+            {
+                continue;
+            }
+            if (dto?.NoBanner == null) continue;
+            foreach (string name in dto.NoBanner)
+                if (!string.IsNullOrWhiteSpace(name)) result.Add(name.Trim());
+        }
+        return result;
+    }
+
+    private static FileDto? Deserialize(BannerFile file, string label)
+    {
         try
         {
             IDeserializer deserializer = new DeserializerBuilder()
                 .WithNamingConvention(CamelCaseNamingConvention.Instance)
                 .IgnoreUnmatchedProperties()
                 .Build();
-            file = deserializer.Deserialize<FileDto>(text);
+            return deserializer.Deserialize<FileDto>(file.Text) ?? new FileDto();
         }
         catch (Exception e)
         {
-            Plugin.Log.LogError($"Could not read {source}: {e.Message}");
+            Plugin.Log.LogError($"Could not read {label}{file.Name}: {e.Message}");
             return null;
         }
+    }
 
-        var result = new List<BannerDefinition>();
-        if (file?.Banners == null)
+    /// <summary>Defaults from the main file, plus what must be unique across all files.</summary>
+    private sealed class Context
+    {
+        public readonly KindDto PermanentDefaults;
+        public readonly KindDto PortableDefaults;
+        public readonly Dictionary<string, RarityDto> Rarities;
+        public readonly Dictionary<string, BiomeDto> Biomes;
+        public readonly HashSet<string> SeenIds = new(StringComparer.OrdinalIgnoreCase);
+        public readonly Dictionary<string, string> SeenCreatures = new(StringComparer.Ordinal);
+
+        public Context(DefaultsDto? defaults)
         {
-            Plugin.Log.LogWarning($"{source} defines no banners.");
-            return result;
+            PermanentDefaults = Merge(BuiltInPermanent, defaults?.Permanent);
+            PortableDefaults = Merge(BuiltInPortable, defaults?.Portable);
+            Rarities = new Dictionary<string, RarityDto>((defaults?.Rarity ?? new Dictionary<string, RarityDto?>())
+                .Where(pair => pair.Value != null).ToDictionary(pair => pair.Key, pair => pair.Value!), StringComparer.OrdinalIgnoreCase);
+            Biomes = new Dictionary<string, BiomeDto>((defaults?.Biomes ?? new Dictionary<string, BiomeDto?>())
+                .Where(pair => pair.Value != null).ToDictionary(pair => pair.Key, pair => pair.Value!), StringComparer.OrdinalIgnoreCase);
         }
+    }
 
-        KindDto permanentDefaults = Merge(BuiltInPermanent, file.Defaults?.Permanent);
-        KindDto portableDefaults = Merge(BuiltInPortable, file.Defaults?.Portable);
-        var rarities = new Dictionary<string, RarityDto>((file.Defaults?.Rarity ?? new Dictionary<string, RarityDto?>())
-            .Where(pair => pair.Value != null).ToDictionary(pair => pair.Key, pair => pair.Value!), StringComparer.OrdinalIgnoreCase);
-        var biomes = new Dictionary<string, BiomeDto>((file.Defaults?.Biomes ?? new Dictionary<string, BiomeDto?>())
-            .Where(pair => pair.Value != null).ToDictionary(pair => pair.Key, pair => pair.Value!), StringComparer.OrdinalIgnoreCase);
-        var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var seenCreatures = new Dictionary<string, string>(StringComparer.Ordinal);
+    private static void ParseBanners(FileDto file, string source, Context context, List<BannerDefinition> result)
+    {
+        KindDto permanentDefaults = context.PermanentDefaults;
+        KindDto portableDefaults = context.PortableDefaults;
+        Dictionary<string, RarityDto> rarities = context.Rarities;
+        Dictionary<string, BiomeDto> biomes = context.Biomes;
+        HashSet<string> seenIds = context.SeenIds;
+        Dictionary<string, string> seenCreatures = context.SeenCreatures;
 
-        for (int i = 0; i < file.Banners.Count; i++)
+        for (int i = 0; i < file.Banners!.Count; i++)
         {
             BannerDto? dto = file.Banners[i];
             string where = $"{source}, banner #{i + 1}";
@@ -76,7 +167,7 @@ internal static class BannerYaml
             where = $"{source}, banner '{dto.Id}'";
             if (!seenIds.Add(dto.Id!))
             {
-                Plugin.Log.LogWarning($"{where}: duplicate id. Skipped.");
+                Plugin.Log.LogWarning($"{where}: duplicate id (ids must be unique across all banner files). Skipped.");
                 continue;
             }
             if (string.IsNullOrWhiteSpace(dto.Creature) || string.IsNullOrWhiteSpace(dto.Trophy))
@@ -85,6 +176,14 @@ internal static class BannerYaml
                 continue;
             }
 
+            ParseOne(dto, where, source, file, permanentDefaults, portableDefaults, rarities, biomes, seenCreatures, result);
+        }
+    }
+
+    private static void ParseOne(BannerDto dto, string where, string source, FileDto file, KindDto permanentDefaults, KindDto portableDefaults,
+        Dictionary<string, RarityDto> rarities, Dictionary<string, BiomeDto> biomes, Dictionary<string, string> seenCreatures,
+        List<BannerDefinition> result)
+    {
             // Layers, weakest first: built-in < defaults < biome < entry. Rarity sets the trophy count unless
             // the entry gives one itself.
             BiomeDto? biome = null;
@@ -113,6 +212,7 @@ internal static class BannerYaml
                 Biome = biomeName,
                 Rarity = rarityName,
                 Enabled = dto.Enabled ?? true,
+                RequiresMod = (string.IsNullOrWhiteSpace(dto.RequiresMod) ? file.RequiresMod : dto.RequiresMod)?.Trim() ?? "",
                 Permanent = ToValues(permanent, where + " (permanent)"),
                 Portable = ToValues(portable, where + " (portable)"),
             };
@@ -137,9 +237,6 @@ internal static class BannerYaml
             }
 
             result.Add(def);
-        }
-
-        return result;
     }
 
     private static KindDto Merge(KindDto under, KindDto? over)
@@ -248,6 +345,10 @@ internal static class BannerYaml
 
     private sealed class FileDto
     {
+        /// <summary>Plugin GUID: every banner in this file needs that mod loaded (an entry can set its own).</summary>
+        public string? RequiresMod { get; set; }
+        /// <summary>Creature prefabs deliberately left without a banner; nt_trophies doesn't suggest them.</summary>
+        public List<string>? NoBanner { get; set; }
         public DefaultsDto? Defaults { get; set; }
         public List<BannerDto?>? Banners { get; set; }
     }
@@ -284,6 +385,7 @@ internal static class BannerYaml
         public string? Tint { get; set; }
         public string? Biome { get; set; }
         public string? Rarity { get; set; }
+        public string? RequiresMod { get; set; }
         public bool? Enabled { get; set; }
         public KindDto? Permanent { get; set; }
         public KindDto? Portable { get; set; }

@@ -60,6 +60,9 @@ internal sealed class BannerDefinition
     public string Biome = "";
     public string Rarity = "";
 
+    /// <summary>Plugin GUID this banner needs. Checked when banners are built: if that mod isn't loaded, the banner is skipped quietly.</summary>
+    public string RequiresMod = "";
+
     /// <summary>From the file in force (local, or the server's when connected). Synced.</summary>
     public bool Enabled = true;
 

@@ -16,6 +16,16 @@
 #
 # alsoMatches lists technical copies of the SAME creature (same name and trophy): sleeping, frozen,
 # biome and loadout variants. Never related creatures: those get their own banner.
+#
+# Other files: every banners.<name>.yml in this folder is loaded too (e.g. one per mod). They use the
+# defaults below and can start with  requiresMod: <plugin GUID>  to be skipped quietly when that mod
+# isn't installed. The nt_trophies console command writes suggested lines to suggested-banners.yml.
+
+# Creatures deliberately left without a banner, so nt_trophies doesn't suggest them (bosses are never
+# suggested). Unique or quest creatures, a prisoner, and test prefabs. Any banner file can have this list.
+noBanner: [ BogWitchKvastur, Deer_White, DvergerDeepNorth, DvergerTest, TrainingDummy,
+            Fenring_Cultist_Hildir, Fenring_Cultist_Hildir_nochest, GoblinBruteBros, GoblinBruteBros_nochest,
+            GoblinShaman_Hildir, GoblinShaman_Hildir_nochest, Skeleton_Hildir, Skeleton_Hildir_nochest ]
 
 defaults:
   permanent:               # trophy banner: hammer piece, always on

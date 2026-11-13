@@ -73,11 +73,18 @@ internal static class BannerPieces
         PrefabManager.OnVanillaPrefabsAvailable -= Register;
 
         int built = 0;
+        var missingMods = new Dictionary<string, int>();
         foreach (BannerDefinition def in BannerRegistry.All)
         {
             if (!def.Enabled)
             {
-                Plugin.Log.LogInfo($"Banner '{def.Id}' is disabled in {BannerRegistry.FileName}. Not built.");
+                Plugin.Log.LogInfo($"Banner '{def.Id}' is disabled in the banner files. Not built.");
+                continue;
+            }
+            // requiresMod: that mod isn't installed, so skip quietly (counted, one line per mod below).
+            if (def.RequiresMod.Length > 0 && !BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey(def.RequiresMod))
+            {
+                missingMods[def.RequiresMod] = missingMods.TryGetValue(def.RequiresMod, out int n) ? n + 1 : 1;
                 continue;
             }
             if (!TryResolve(def, out ItemDrop trophy, out Character creature)) continue;
@@ -96,6 +103,8 @@ internal static class BannerPieces
             def.Registered = true;
             built++;
         }
+        foreach (KeyValuePair<string, int> missing in missingMods)
+            Plugin.Log.LogInfo($"Skipped {missing.Value} banner(s) that need mod '{missing.Key}', which isn't installed.");
         Plugin.Log.LogInfo($"Built {built} banner(s).");
     }
 
