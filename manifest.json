@@ -1,0 +1,11 @@
+{
+  "name": "NargTrophy",
+  "version_number": "0.1.0",
+  "website_url": "https://github.com/Nargath/nargtrophy",
+  "description": "Craft creature banners from trophies. Players near a placed banner deal more damage to that creature and take less from it.",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2333",
+    "ValheimModding-Jotunn-2.30.2",
+    "ValheimModding-YamlDotNet-16.3.1"
+  ]
+}

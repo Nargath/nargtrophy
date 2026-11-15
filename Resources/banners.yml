@@ -11,7 +11,7 @@
 #
 # Bosses are left out on purpose: their trophies have vanilla uses (Forsaken powers).
 # Also left out: unique or quest creatures with a guaranteed trophy (Hildir's bosses, Kvastur, White Deer).
-# Availability tiers are a first balance pass (2026-11-13, docs/09_Balance.md). Biomes marked "unverified"
+# Availability tiers are a first balance pass. Biomes marked "unverified"
 # are guesses. All numbers are placeholders until the balance pass.
 #
 # alsoMatches lists technical copies of the SAME creature (same name and trophy): sleeping, frozen,
@@ -57,7 +57,7 @@ defaults:
 
   # Availability = how easy a creature is to find and kill (spawn rate, nests and villages, difficulty), set by
   # hand per creature. Each tier is a KILL target; the mod reads the creature's real trophy drop chance and works
-  # out the trophy cost: trophies = kills x drop chance, rounded, at least 1 (docs/09_Balance.md).
+  # out the trophy cost: trophies = kills x drop chance, rounded, at least 1.
   #   permanent = kills for a trophy banner, portable = for a war standard,
   #   upgrade = kills per upgrade step (x1, x2, x4 for levels 2, 3, 4), both kinds.
   # An entry can still set  permanent: { trophies: N }  (or portable / upgrade) to fix its own count.
