@@ -6,3 +6,7 @@ obj/
 # Private dev notes (kept locally, not published)
 docs/
 CLAUDE.md
+
+# Release packaging (built locally, attached to releases, never committed)
+Release-Packaging/
+Release-Zips/
