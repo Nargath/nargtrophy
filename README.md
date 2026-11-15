@@ -1,8 +1,10 @@
 # NargTrophy
 
-Give your trophies a use. Collect trophies from one creature and craft its **banner**. Players fighting near a placed banner deal **more damage to that creature** and **take less damage from it**.
+**AI disclosure:** the code was written by Claude, Anthropic's AI. I'm not a programmer. The design, decisions, testing and balance are mine.
 
-Inspired by Terraria's banners, but you earn them through trophies, and they work around a spot in the world instead of from your inventory.
+Inspired by Terraria's banner system.
+
+Give your trophies a use. Collect trophies from one creature and craft its **trophy banner** or **war standard**. Players fighting near one deal **more damage to that creature** and **take less damage from it**.
 
 ## Features
 
