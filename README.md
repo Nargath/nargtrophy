@@ -6,6 +6,8 @@ Inspired by Terraria's banner system.
 
 Give your trophies a use. Collect trophies from one creature and craft its **trophy banner** or **war standard**. Players fighting near one deal **more damage to that creature** and **take less damage from it**.
 
+> **Early development.** NargTrophy works and has been tested in single player, but testing is still ongoing, especially multiplayer. Values may change between versions. Please [report any problems](#support-and-bug-reports).
+
 ## Features
 
 - **A banner for every regular creature.** All 59 non-boss vanilla creatures with a trophy, from Boars to Ashlands and Deep North creatures. Bosses are left out because their trophies already have a job.
@@ -99,6 +101,18 @@ You can find a mod's GUID in the BepInEx log, in the line `Loading [ModName 1.2.
 - All values are a first balance pass and may change.
 - Deep North banners cost trophies only for now, with no extra materials.
 - Multiplayer is supported, but it hasn't been tested on a dedicated server yet. Please report any problems.
+
+## Support and bug reports
+
+Please use [GitHub Issues](https://github.com/Nargath/nargtrophy/issues) for bugs, questions and suggestions, so everything is in one place. I don't follow Discord servers or mod site comments for support.
+
+For a bug, please include:
+
+- The NargTrophy version.
+- Single player, a self-hosted game, or a dedicated server.
+- What you did, what you expected, and what happened.
+- Your `BepInEx/LogOutput.log` from the session where it happened (attach the file).
+- Your mod list (a Gale, r2modman or Thunderstore Mod Manager profile code works).
 
 ## License
 

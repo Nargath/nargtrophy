@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>NargTrophy</AssemblyName>
     <RootNamespace>NargTrophy</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Description>Craft creature banners from trophies. A placed banner boosts players against that one creature.</Description>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>

@@ -17,7 +17,7 @@ public class Plugin : BaseUnityPlugin
 {
     public const string PluginGUID = "com.nargath.nargtrophy";
     public const string PluginName = "NargTrophy";
-    public const string PluginVersion = "0.1.0";
+    public const string PluginVersion = "0.1.1";
 
     internal static Plugin Instance { get; private set; } = null!;
     internal static BepInEx.Logging.ManualLogSource Log => Instance.Logger;

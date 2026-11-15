@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- README: early development note, and a support section pointing to GitHub Issues.
+- No gameplay changes. Works alongside 0.1.0 in multiplayer.
+
 ## 0.1.0
 
 First release.
